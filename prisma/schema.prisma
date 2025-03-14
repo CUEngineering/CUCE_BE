@@ -1,0 +1,226 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Define enums based on requirements
+enum ProgramType {
+  UNDERGRADUATE
+  GRADUATE
+  MASTERS
+  DOCTORATE
+}
+
+enum CourseType {
+  UNDERGRADUATE
+  GRADUATE
+  MASTERS
+  DOCTORATE
+}
+
+enum SessionStatus {
+  UPCOMING
+  ACTIVE
+  CLOSED
+}
+
+enum EnrollmentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum UserType {
+  STUDENT
+  REGISTRAR
+  ADMIN
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+}
+
+// Define models based on ERD
+model Program {
+  id             String      @id @default(uuid())
+  name           String
+  type           ProgramType
+  requiredCredits Int
+  
+  // Relations
+  students       Student[]
+  programCourses ProgramCourse[]
+  
+  // Timestamps
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  
+  @@map("programs")
+}
+
+model Course {
+  id             String      @id @default(uuid())
+  name           String
+  code           String      @unique
+  creditValue    Int
+  type           CourseType
+  defaultCapacity Int
+  
+  // Relations
+  programCourses ProgramCourse[]
+  sessionCourses SessionCourse[]
+  enrollments    Enrollment[]
+  
+  // Timestamps
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  
+  @@map("courses")
+}
+
+model Session {
+  id                String        @id @default(uuid())
+  name              String
+  startDate         DateTime
+  endDate           DateTime
+  enrollmentDeadline DateTime
+  status            SessionStatus
+  
+  // Relations
+  sessionCourses    SessionCourse[]
+  enrollments       Enrollment[]
+  
+  // Timestamps
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  
+  @@map("sessions")
+}
+
+model Student {
+  id             String    @id @default(uuid())
+  studentId      String    @unique // External student ID
+  firstName      String?
+  lastName       String?
+  email          String    @unique
+  profilePicture String?
+  
+  // Relations
+  programId      String
+  program        Program   @relation(fields: [programId], references: [id])
+  enrollments    Enrollment[]
+  
+  // User authentication
+  userId         String?   @unique // Link to Supabase Auth user
+  
+  // Timestamps
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  
+  @@map("students")
+}
+
+model Registrar {
+  id             String    @id @default(uuid())
+  firstName      String?
+  lastName       String?
+  email          String    @unique
+  profilePicture String?
+  
+  // Relations
+  enrollments    Enrollment[]
+  
+  // User authentication
+  userId         String?   @unique // Link to Supabase Auth user
+  
+  // Timestamps
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  
+  @@map("registrars")
+}
+
+model Enrollment {
+  id               String          @id @default(uuid())
+  status           EnrollmentStatus
+  specialRequest   Boolean         @default(false)
+  rejectionReason  String?
+  
+  // Relations
+  studentId        String
+  student          Student         @relation(fields: [studentId], references: [id])
+  courseId         String
+  course           Course          @relation(fields: [courseId], references: [id])
+  sessionId        String
+  session          Session         @relation(fields: [sessionId], references: [id])
+  registrarId      String?
+  registrar        Registrar?      @relation(fields: [registrarId], references: [id])
+  
+  // Timestamps
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  
+  // Constraints
+  @@unique([studentId, courseId, sessionId], name: "unique_enrollment_not_rejected")
+  @@map("enrollments")
+}
+
+model ProgramCourse {
+  programId        String
+  program          Program    @relation(fields: [programId], references: [id])
+  courseId         String
+  course           Course     @relation(fields: [courseId], references: [id])
+  
+  // Timestamps
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  
+  @@id([programId, courseId])
+  @@map("program_courses")
+}
+
+model SessionCourse {
+  sessionId        String
+  session          Session    @relation(fields: [sessionId], references: [id])
+  courseId         String
+  course           Course     @relation(fields: [courseId], references: [id])
+  status           String     @default("OPEN") // OPEN or CLOSED
+  adjustedCapacity Int
+  
+  // Timestamps
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  
+  @@id([sessionId, courseId])
+  @@map("session_courses")
+}
+
+model Invitation {
+  id               String           @id @default(uuid())
+  email            String
+  token            String           @unique
+  expiresAt        DateTime
+  status           InvitationStatus
+  userType         UserType
+  studentId        String?
+  registrarId      String?
+  
+  // Timestamps
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  
+  @@unique([email, status], name: "unique_active_invitation")
+  @@map("invitations")
+}
