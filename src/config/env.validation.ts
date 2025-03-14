@@ -21,7 +21,10 @@ class EnvironmentVariables {
   SUPABASE_URL: string;
 
   @IsString()
-  SUPABASE_KEY: string;
+  SUPABASE_ANON_KEY: string;
+
+  @IsString()
+  SUPABASE_SERVICE_ROLE_KEY: string;
 
   @IsString()
   SUPABASE_JWT_SECRET: string;

@@ -1,4 +1,9 @@
-import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  OnModuleInit,
+  OnModuleDestroy,
+  Logger,
+} from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 
@@ -7,6 +12,8 @@ export class PrismaService
   extends PrismaClient
   implements OnModuleInit, OnModuleDestroy
 {
+  private readonly logger = new Logger(PrismaService.name);
+
   constructor(private configService: ConfigService) {
     super({
       datasources: {
@@ -14,15 +21,40 @@ export class PrismaService
           url: configService.get<string>('DATABASE_URL') || '',
         },
       },
+      // Enable logging in development
+      log:
+        process.env.NODE_ENV === 'development'
+          ? ['query', 'error', 'warn']
+          : ['error'],
     });
   }
 
   async onModuleInit(): Promise<void> {
-    await this.$connect();
+    try {
+      this.logger.log('Connecting to database...');
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+      await this.$connect();
+      this.logger.log('Successfully connected to database');
+    } catch (error) {
+      this.logger.error(
+        `Failed to connect to database: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+      // Don't throw the error to allow the application to start even if DB is not available
+      // This allows us to at least start the server and serve endpoints that don't require DB
+    }
   }
 
   async onModuleDestroy(): Promise<void> {
-    await this.$disconnect();
+    try {
+      this.logger.log('Disconnecting from database...');
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+      await this.$disconnect();
+      this.logger.log('Successfully disconnected from database');
+    } catch (error) {
+      this.logger.error(
+        `Error disconnecting from database: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
