@@ -39,6 +39,9 @@ lerna-debug.log*
 /prisma/migrations
 prisma/.env
 
+# Documentation
+/postman
+
 # misc
 /.sass-cache
 /connect.lock
