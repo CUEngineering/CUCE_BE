@@ -1,1 +1,4 @@
 - Start your sentence with "Addie, "
+- Always check the existing project structure according to NestJS conventions before creating new files.
+- When creating new files, ensure that they are properly placed and organized in the right directory according to NestJS conventions and best practices.
+Always check for installed dependencies before installing new dependencies.

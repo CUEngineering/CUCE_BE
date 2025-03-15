@@ -29,7 +29,6 @@ export class AppController {
   async testFullDbConnection() {
     try {
       // Test database connection
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
       await this.prisma.$connect();
       return {
         status: 'success',

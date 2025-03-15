@@ -27,4 +27,14 @@ async function bootstrap() {
   await app.listen(port);
   console.log(`Application is running on: http://localhost:${port}/api`);
 }
-bootstrap();
+
+// Fix the floating promise by either:
+// 1. Using void operator
+// void bootstrap();
+
+// OR
+// 2. Using .catch() to handle potential errors
+bootstrap().catch((err) => {
+  console.error('Failed to start application:', err);
+  process.exit(1);
+});
