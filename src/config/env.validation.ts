@@ -18,6 +18,9 @@ class EnvironmentVariables {
   DATABASE_URL: string;
 
   @IsString()
+  DIRECT_URL: string;
+
+  @IsString()
   SUPABASE_URL: string;
 
   @IsString()

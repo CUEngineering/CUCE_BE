@@ -5,6 +5,8 @@ import { AppService } from './app.service';
 import { validate } from './config/env.validation';
 import { PrismaModule } from './prisma/prisma.module';
 import { SupabaseModule } from './supabase/supabase.module';
+import { CoursesModule } from './modules/courses/courses.module';
+import { ProgramsModule } from './modules/programs/programs.module';
 
 @Module({
   imports: [
@@ -15,6 +17,8 @@ import { SupabaseModule } from './supabase/supabase.module';
     }),
     PrismaModule,
     SupabaseModule,
+    CoursesModule,
+    ProgramsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
