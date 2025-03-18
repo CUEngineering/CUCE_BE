@@ -57,7 +57,7 @@ export class PrismaService
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
+   
   async cleanDatabase(): Promise<void> {
     if (this.configService.get<string>('NODE_ENV') === 'test') {
       // Add logic to truncate all tables for testing purposes
