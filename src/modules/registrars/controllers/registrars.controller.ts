@@ -9,6 +9,7 @@ import {
   HttpCode,
   HttpStatus,
   UseGuards,
+  Req,
 } from '@nestjs/common';
 import { AuthGuard } from '../../../supabase/auth.guard';
 import { RegistrarsService } from '../services/registrars.service';
@@ -17,6 +18,7 @@ import {
   InviteMultipleRegistrarsDto,
 } from '../dto/invite-registrar.dto';
 import { UpdateRegistrarDto } from '../dto/update-registrar.dto';
+import { Request } from 'express';
 
 interface InvitationResult {
   email: string;
@@ -31,42 +33,64 @@ export class RegistrarsController {
   constructor(private readonly registrarsService: RegistrarsService) {}
 
   @Get()
-  async findAll() {
-    return this.registrarsService.findAll();
+  async findAll(@Req() req: Request & { accessToken: string }) {
+    return this.registrarsService.findAll(req.accessToken);
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string) {
-    return this.registrarsService.findOne(id);
+  async findOne(
+    @Param('id') id: string,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.registrarsService.findOne(id, req.accessToken);
   }
 
   @Patch(':id')
   async update(
     @Param('id') id: string,
     @Body() updateRegistrarDto: UpdateRegistrarDto,
+    @Req() req: Request & { accessToken: string },
   ) {
-    return this.registrarsService.update(id, updateRegistrarDto);
+    return this.registrarsService.update(
+      id,
+      updateRegistrarDto,
+      req.accessToken,
+    );
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Param('id') id: string) {
-    return this.registrarsService.remove(id);
+  async remove(
+    @Param('id') id: string,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.registrarsService.remove(id, req.accessToken);
   }
 
   @Post('invite')
-  async invite(@Body() inviteRegistrarDto: InviteRegistrarDto) {
-    return this.registrarsService.inviteRegistrar(inviteRegistrarDto);
+  async invite(
+    @Body() inviteRegistrarDto: InviteRegistrarDto,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.registrarsService.inviteRegistrar(
+      inviteRegistrarDto,
+      req.accessToken,
+    );
   }
 
   @Post('invite/multiple')
-  async inviteMultiple(@Body() inviteMultipleDto: InviteMultipleRegistrarsDto) {
+  async inviteMultiple(
+    @Body() inviteMultipleDto: InviteMultipleRegistrarsDto,
+    @Req() req: Request & { accessToken: string },
+  ) {
     const results: InvitationResult[] = [];
 
     for (const emailDto of inviteMultipleDto.emails) {
       try {
-        const invitation =
-          await this.registrarsService.inviteRegistrar(emailDto);
+        const invitation = await this.registrarsService.inviteRegistrar(
+          emailDto,
+          req.accessToken,
+        );
         results.push({
           email: emailDto.email,
           success: true,
@@ -89,22 +113,34 @@ export class RegistrarsController {
   }
 
   @Delete('invitations/:id')
-  async cancelInvitation(@Param('id') id: string) {
-    return this.registrarsService.cancelInvitation(id);
+  async cancelInvitation(
+    @Param('id') id: string,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.registrarsService.cancelInvitation(id, req.accessToken);
   }
 
   @Post(':id/suspend')
-  async suspendRegistrar(@Param('id') id: string) {
-    return this.registrarsService.suspend(id);
+  async suspendRegistrar(
+    @Param('id') id: string,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.registrarsService.suspend(id, req.accessToken);
   }
 
   @Post(':id/unsuspend')
-  async unsuspendRegistrar(@Param('id') id: string) {
-    return this.registrarsService.liftSuspension(id);
+  async unsuspendRegistrar(
+    @Param('id') id: string,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.registrarsService.liftSuspension(id, req.accessToken);
   }
 
   @Get(':id/stats')
-  async getRegistrarStats(@Param('id') id: string) {
-    return this.registrarsService.getRegistrarStats(id);
+  async getRegistrarStats(
+    @Param('id') id: string,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.registrarsService.getRegistrarStats(id, req.accessToken);
   }
 }

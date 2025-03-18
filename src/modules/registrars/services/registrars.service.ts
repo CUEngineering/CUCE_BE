@@ -4,385 +4,266 @@ import {
   InternalServerErrorException,
   BadRequestException,
 } from '@nestjs/common';
-import { PrismaService } from '../../../prisma/prisma.service';
+import { SupabaseService } from '../../../supabase/supabase.service';
 import { CreateRegistrarDto } from '../dto/create-registrar.dto';
 import { UpdateRegistrarDto } from '../dto/update-registrar.dto';
 import { InviteRegistrarDto } from '../dto/invite-registrar.dto';
 import { randomUUID } from 'crypto';
 
-interface PrismaError extends Error {
-  code?: string;
+interface Invitation {
+  invitation_id: string;
+  email: string;
+  token: string;
+  user_type: string;
+  status: string;
+  expires_at: Date;
 }
 
-function isPrismaError(error: unknown): error is PrismaError {
-  return error instanceof Error && 'code' in error;
+interface Enrollment {
+  enrollment_id: string;
+  enrollment_status: string;
+  session_id: string;
 }
 
-function isError(error: unknown): error is Error {
-  return error instanceof Error;
-}
-
-/**
- * Function to safely generate a UUID
- */
 function safeUuidv4(): string {
   try {
-    // Use Node.js built-in crypto module which has proper typing
     return randomUUID();
   } catch {
-    // Extremely unlikely, but just in case
     return `fallback-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
   }
 }
 
 @Injectable()
 export class RegistrarsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly supabaseService: SupabaseService) {}
 
-  async findAll() {
-    try {
-      return await this.prisma.registrar.findMany({
-        include: {
-          // The Prisma schema doesn't have a User model
-          // Instead, we need to use appropriate fields from the Registrar model
-        },
-      });
-    } catch (error) {
-      if (isError(error)) {
-        throw new InternalServerErrorException(
-          `Failed to find registrars: ${error.message}`,
-        );
-      }
-      throw new InternalServerErrorException(
-        'An unknown error occurred while finding registrars',
-      );
-    }
+  async findAll(accessToken: string) {
+    return this.supabaseService.select(accessToken, 'registrars', {});
   }
 
-  async findOne(registrar_id: string) {
-    try {
-      const registrar = await this.prisma.registrar.findUnique({
-        where: { registrar_id },
-      });
+  async findOne(registrar_id: string, accessToken: string) {
+    const result = await this.supabaseService.select(
+      accessToken,
+      'registrars',
+      {
+        filter: { registrar_id },
+      },
+    );
 
-      if (!registrar) {
-        throw new NotFoundException(
-          `Registrar with ID ${registrar_id} not found`,
-        );
-      }
-
-      return registrar;
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-
-      if (isError(error)) {
-        throw new InternalServerErrorException(
-          `Failed to find registrar: ${error.message}`,
-        );
-      }
-      throw new InternalServerErrorException(
-        'An unknown error occurred while finding registrar',
+    if (!result || result.length === 0) {
+      throw new NotFoundException(
+        `Registrar with ID ${registrar_id} not found`,
       );
     }
+
+    return result[0];
   }
 
-  async create(createRegistrarDto: CreateRegistrarDto) {
-    try {
-      const id = safeUuidv4();
+  async create(createRegistrarDto: CreateRegistrarDto, accessToken: string) {
+    const id = safeUuidv4();
+    return this.supabaseService.insert(accessToken, 'registrars', {
+      ...createRegistrarDto,
+      registrar_id: id,
+    });
+  }
 
-      const registrar = await this.prisma.registrar.create({
-        data: {
-          ...createRegistrarDto,
-          registrar_id: id,
-        },
-      });
+  async update(
+    registrar_id: string,
+    updateRegistrarDto: UpdateRegistrarDto,
+    accessToken: string,
+  ) {
+    const result = await this.supabaseService.update(
+      accessToken,
+      'registrars',
+      { registrar_id },
+      updateRegistrarDto,
+    );
 
-      return registrar;
-    } catch (error) {
-      if (isError(error)) {
-        throw new InternalServerErrorException(
-          `Failed to create registrar: ${error.message}`,
-        );
-      }
-      throw new InternalServerErrorException(
-        'An unknown error occurred while creating registrar',
+    if (!result || result.length === 0) {
+      throw new NotFoundException(
+        `Registrar with ID ${registrar_id} not found`,
       );
     }
+
+    return result[0];
   }
 
-  async update(registrar_id: string, updateRegistrarDto: UpdateRegistrarDto) {
-    try {
-      const registrar = await this.prisma.registrar.update({
-        where: { registrar_id },
-        data: updateRegistrarDto,
-      });
+  async remove(registrar_id: string, accessToken: string) {
+    const result = await this.supabaseService.delete(
+      accessToken,
+      'registrars',
+      { registrar_id },
+    );
 
-      return registrar;
-    } catch (error) {
-      if (isPrismaError(error) && error.code === 'P2025') {
-        throw new NotFoundException(
-          `Registrar with ID ${registrar_id} not found`,
-        );
-      }
-
-      if (isError(error)) {
-        throw new InternalServerErrorException(
-          `Failed to update registrar: ${error.message}`,
-        );
-      }
-      throw new InternalServerErrorException(
-        'An unknown error occurred while updating registrar',
+    if (!result || result.length === 0) {
+      throw new NotFoundException(
+        `Registrar with ID ${registrar_id} not found`,
       );
     }
+
+    return {
+      success: true,
+      message: `Registrar with ID ${registrar_id} removed successfully`,
+    };
   }
 
-  async remove(registrar_id: string) {
-    try {
-      await this.prisma.registrar.delete({
-        where: { registrar_id },
-      });
+  async inviteRegistrar(inviteDto: InviteRegistrarDto, accessToken: string) {
+    const { email } = inviteDto;
 
-      return {
-        success: true,
-        message: `Registrar with ID ${registrar_id} removed successfully`,
-      };
-    } catch (error) {
-      if (isPrismaError(error) && error.code === 'P2025') {
-        throw new NotFoundException(
-          `Registrar with ID ${registrar_id} not found`,
-        );
-      }
-
-      if (isError(error)) {
-        throw new InternalServerErrorException(
-          `Failed to remove registrar: ${error.message}`,
-        );
-      }
-      throw new InternalServerErrorException(
-        'An unknown error occurred while removing registrar',
-      );
-    }
-  }
-
-  async inviteRegistrar(inviteDto: InviteRegistrarDto) {
-    try {
-      const { email } = inviteDto;
-
-      // Check if invitation already exists for this email with PENDING status
-      const existingInvitation = await this.prisma.invitation.findFirst({
-        where: {
+    // Check if invitation already exists for this email with PENDING status
+    const existingInvitation = (await this.supabaseService.select(
+      accessToken,
+      'invitations',
+      {
+        filter: {
           email,
           status: 'PENDING',
         },
-      });
+      },
+    )) as unknown as Invitation[];
 
-      if (existingInvitation) {
-        throw new BadRequestException(
-          `An invitation for ${email} already exists and is pending`,
-        );
-      }
-
-      // Generate safe UUIDs
-      const invitation_id = safeUuidv4();
-      const token = safeUuidv4();
-
-      // Create new invitation
-      const invitation = await this.prisma.invitation.create({
-        data: {
-          invitation_id,
-          email,
-          token,
-          user_type: 'REGISTRAR',
-          status: 'PENDING',
-          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-        },
-      });
-
-      return {
-        success: true,
-        message: `Invitation sent to ${email}`,
-        invitation,
-      };
-    } catch (error) {
-      if (error instanceof BadRequestException) {
-        throw error;
-      }
-
-      if (isError(error)) {
-        throw new InternalServerErrorException(
-          `Failed to invite registrar: ${error.message}`,
-        );
-      }
-      throw new InternalServerErrorException(
-        'An unknown error occurred while inviting registrar',
+    if (existingInvitation && existingInvitation.length > 0) {
+      throw new BadRequestException(
+        `An invitation for ${email} already exists and is pending`,
       );
     }
+
+    // Generate safe UUIDs
+    const invitation_id = safeUuidv4();
+    const token = safeUuidv4();
+
+    // Create new invitation
+    const invitation = (await this.supabaseService.insert(
+      accessToken,
+      'invitations',
+      {
+        invitation_id,
+        email,
+        token,
+        user_type: 'REGISTRAR',
+        status: 'PENDING',
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      },
+    )) as unknown as Invitation[];
+
+    return {
+      success: true,
+      message: `Invitation sent to ${email}`,
+      invitation: invitation[0],
+    };
   }
 
-  async cancelInvitation(invitation_id: string) {
-    try {
-      // Check if invitation exists and is pending
-      const invitation = await this.prisma.invitation.findUnique({
-        where: { invitation_id },
-      });
+  async cancelInvitation(invitation_id: string, accessToken: string) {
+    // Check if invitation exists and is pending
+    const invitation = (await this.supabaseService.select(
+      accessToken,
+      'invitations',
+      { filter: { invitation_id } },
+    )) as unknown as Invitation[];
 
-      if (!invitation) {
-        throw new NotFoundException(
-          `Invitation with ID ${invitation_id} not found`,
-        );
-      }
-
-      if (invitation.status !== 'PENDING') {
-        throw new BadRequestException(
-          `Invitation is ${invitation.status.toLowerCase()}, cannot be cancelled`,
-        );
-      }
-
-      // Update invitation status
-      await this.prisma.invitation.update({
-        where: { invitation_id },
-        data: {
-          status: 'CANCELLED',
-        },
-      });
-
-      return {
-        success: true,
-        message: `Invitation cancelled successfully`,
-      };
-    } catch (error) {
-      if (
-        error instanceof NotFoundException ||
-        error instanceof BadRequestException
-      ) {
-        throw error;
-      }
-
-      if (isError(error)) {
-        throw new InternalServerErrorException(
-          `Failed to cancel invitation: ${error.message}`,
-        );
-      }
-      throw new InternalServerErrorException(
-        'An unknown error occurred while cancelling invitation',
+    if (!invitation || invitation.length === 0) {
+      throw new NotFoundException(
+        `Invitation with ID ${invitation_id} not found`,
       );
     }
+
+    if (invitation[0].status !== 'PENDING') {
+      throw new BadRequestException(
+        `Invitation is ${invitation[0].status.toLowerCase()}, cannot be cancelled`,
+      );
+    }
+
+    // Update invitation status
+    const updatedInvitation = (await this.supabaseService.update(
+      accessToken,
+      'invitations',
+      { invitation_id },
+      { status: 'CANCELLED' },
+    )) as unknown as Invitation[];
+
+    return {
+      success: true,
+      message: 'Invitation cancelled successfully',
+      invitation: updatedInvitation[0],
+    };
   }
 
-  async suspend(registrar_id: string) {
-    try {
-      const registrar = await this.prisma.registrar.update({
-        where: { registrar_id },
-        data: {
-          is_suspended: true,
-        },
-      });
+  async suspend(registrar_id: string, accessToken: string) {
+    const result = await this.supabaseService.update(
+      accessToken,
+      'registrars',
+      { registrar_id },
+      { is_suspended: true },
+    );
 
-      return {
-        success: true,
-        message: `Registrar suspended successfully`,
-        registrar,
-      };
-    } catch (error) {
-      if (isPrismaError(error) && error.code === 'P2025') {
-        throw new NotFoundException(
-          `Registrar with ID ${registrar_id} not found`,
-        );
-      }
-
-      if (isError(error)) {
-        throw new InternalServerErrorException(
-          `Failed to suspend registrar: ${error.message}`,
-        );
-      }
-      throw new InternalServerErrorException(
-        'An unknown error occurred while suspending registrar',
+    if (!result || result.length === 0) {
+      throw new NotFoundException(
+        `Registrar with ID ${registrar_id} not found`,
       );
     }
+
+    return {
+      success: true,
+      message: 'Registrar suspended successfully',
+      registrar: result[0],
+    };
   }
 
-  async liftSuspension(registrar_id: string) {
-    try {
-      const registrar = await this.prisma.registrar.update({
-        where: { registrar_id },
-        data: {
-          is_suspended: false,
-        },
-      });
+  async liftSuspension(registrar_id: string, accessToken: string) {
+    const result = await this.supabaseService.update(
+      accessToken,
+      'registrars',
+      { registrar_id },
+      { is_suspended: false },
+    );
 
-      return {
-        success: true,
-        message: `Registrar suspension lifted successfully`,
-        registrar,
-      };
-    } catch (error) {
-      if (isPrismaError(error) && error.code === 'P2025') {
-        throw new NotFoundException(
-          `Registrar with ID ${registrar_id} not found`,
-        );
-      }
-
-      if (isError(error)) {
-        throw new InternalServerErrorException(
-          `Failed to lift suspension: ${error.message}`,
-        );
-      }
-      throw new InternalServerErrorException(
-        'An unknown error occurred while lifting suspension',
+    if (!result || result.length === 0) {
+      throw new NotFoundException(
+        `Registrar with ID ${registrar_id} not found`,
       );
     }
+
+    return {
+      success: true,
+      message: 'Registrar suspension lifted successfully',
+      registrar: result[0],
+    };
   }
 
-  async getRegistrarStats(registrar_id: string) {
-    try {
-      // Verify registrar exists
-      await this.findOne(registrar_id);
+  async getRegistrarStats(registrar_id: string, accessToken: string) {
+    // Verify registrar exists
+    await this.findOne(registrar_id, accessToken);
 
-      // Instead of finding sessions directly, we'll find the sessions through enrollments
-      const enrollments = await this.prisma.enrollment.findMany({
-        where: { registrar_id },
-        include: {
-          session: true,
-        },
-      });
+    // Get all enrollments for this registrar
+    const enrollments = (await this.supabaseService.select(
+      accessToken,
+      'enrollments',
+      {
+        filter: { registrar_id },
+      },
+    )) as unknown as Enrollment[];
 
-      // Get unique sessions from enrollments
-      const uniqueSessions = [...new Set(enrollments.map((e) => e.session_id))];
+    // Get unique sessions
+    const uniqueSessions = [...new Set(enrollments.map((e) => e.session_id))];
 
-      const activeEnrollments = enrollments.filter(
-        (e) => e.enrollment_status === 'ACTIVE',
-      );
+    const activeEnrollments = enrollments.filter(
+      (e) => e.enrollment_status === 'ACTIVE',
+    );
 
-      const completedEnrollments = enrollments.filter(
-        (e) => e.enrollment_status === 'COMPLETED',
-      );
+    const completedEnrollments = enrollments.filter(
+      (e) => e.enrollment_status === 'COMPLETED',
+    );
 
-      const cancelledEnrollments = enrollments.filter(
-        (e) => e.enrollment_status === 'CANCELLED',
-      );
+    const cancelledEnrollments = enrollments.filter(
+      (e) => e.enrollment_status === 'CANCELLED',
+    );
 
-      return {
-        totalSessions: uniqueSessions.length,
-        totalEnrollments: enrollments.length,
-        activeEnrollments: activeEnrollments.length,
-        completedEnrollments: completedEnrollments.length,
-        cancelledEnrollments: cancelledEnrollments.length,
-      };
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-
-      if (isError(error)) {
-        throw new InternalServerErrorException(
-          `Failed to get registrar stats: ${error.message}`,
-        );
-      }
-      throw new InternalServerErrorException(
-        'An unknown error occurred while getting registrar stats',
-      );
-    }
+    return {
+      totalSessions: uniqueSessions.length,
+      totalEnrollments: enrollments.length,
+      activeEnrollments: activeEnrollments.length,
+      completedEnrollments: completedEnrollments.length,
+      cancelledEnrollments: cancelledEnrollments.length,
+    };
   }
 }
