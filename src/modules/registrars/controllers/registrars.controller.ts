@@ -18,12 +18,13 @@ import {
   InviteMultipleRegistrarsDto,
 } from '../dto/invite-registrar.dto';
 import { UpdateRegistrarDto } from '../dto/update-registrar.dto';
+import { InvitationResponse } from '../interfaces/invitation.interface';
 import { Request } from 'express';
 
 interface InvitationResult {
   email: string;
   success: boolean;
-  invitation?: any;
+  invitation?: InvitationResponse;
   error?: string;
 }
 
@@ -71,7 +72,7 @@ export class RegistrarsController {
   async invite(
     @Body() inviteRegistrarDto: InviteRegistrarDto,
     @Req() req: Request & { accessToken: string },
-  ) {
+  ): Promise<InvitationResponse> {
     return this.registrarsService.inviteRegistrar(
       inviteRegistrarDto,
       req.accessToken,
@@ -116,7 +117,7 @@ export class RegistrarsController {
   async cancelInvitation(
     @Param('id') id: string,
     @Req() req: Request & { accessToken: string },
-  ) {
+  ): Promise<InvitationResponse> {
     return this.registrarsService.cancelInvitation(id, req.accessToken);
   }
 

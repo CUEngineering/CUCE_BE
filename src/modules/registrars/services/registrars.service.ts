@@ -8,16 +8,11 @@ import { SupabaseService } from '../../../supabase/supabase.service';
 import { CreateRegistrarDto } from '../dto/create-registrar.dto';
 import { UpdateRegistrarDto } from '../dto/update-registrar.dto';
 import { InviteRegistrarDto } from '../dto/invite-registrar.dto';
+import {
+  Invitation,
+  InvitationResponse,
+} from '../interfaces/invitation.interface';
 import { randomUUID } from 'crypto';
-
-interface Invitation {
-  invitation_id: string;
-  email: string;
-  token: string;
-  user_type: string;
-  status: string;
-  expires_at: Date;
-}
 
 interface Enrollment {
   enrollment_id: string;
@@ -107,7 +102,10 @@ export class RegistrarsService {
     };
   }
 
-  async inviteRegistrar(inviteDto: InviteRegistrarDto, accessToken: string) {
+  async inviteRegistrar(
+    inviteDto: InviteRegistrarDto,
+    accessToken: string,
+  ): Promise<InvitationResponse> {
     const { email } = inviteDto;
 
     // Check if invitation already exists for this email with PENDING status
@@ -153,7 +151,10 @@ export class RegistrarsService {
     };
   }
 
-  async cancelInvitation(invitation_id: string, accessToken: string) {
+  async cancelInvitation(
+    invitation_id: string,
+    accessToken: string,
+  ): Promise<InvitationResponse> {
     // Check if invitation exists and is pending
     const invitation = (await this.supabaseService.select(
       accessToken,
