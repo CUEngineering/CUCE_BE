@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { randomUUID } from 'crypto';
 
 const prisma = new PrismaClient();
 
@@ -129,23 +130,25 @@ async function main() {
 
   console.log('Created session-course associations');
 
-  // Create a Student
-  const student = await prisma.student.create({
-    data: {
-      student_id: 'STU001',
-      first_name: 'John',
-      last_name: 'Doe',
-      email: 'john.doe@example.com',
-      program_id: undergraduateProgram.program_id,
-    },
-  });
-
   // Create a Registrar
   const registrar = await prisma.registrar.create({
     data: {
+      first_name: 'John',
+      last_name: 'Doe',
+      email: 'john.doe@example.com',
+      user_id: randomUUID(),
+    },
+  });
+
+  // Create a Student
+  const student = await prisma.student.create({
+    data: {
+      student_id: 'ST001',
       first_name: 'Jane',
       last_name: 'Smith',
       email: 'jane.smith@example.com',
+      program_id: undergraduateProgram.program_id,
+      user_id: randomUUID(),
     },
   });
 
@@ -163,6 +166,18 @@ async function main() {
   });
 
   console.log('Created enrollment');
+
+  // Create an invitation
+  await prisma.invitation.create({
+    data: {
+      email: 'new.student@example.com',
+      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+      status: 'PENDING',
+      user_type: 'STUDENT',
+      token: randomUUID(),
+    },
+  });
+
   console.log('Seeding completed.');
 }
 

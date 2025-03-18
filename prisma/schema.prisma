@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -59,175 +53,140 @@ enum InvitationStatus {
 
 // Define models based on ERD
 model Program {
-  program_id             String      @id @default(uuid())
-  program_name           String
-  program_type           ProgramType
-  total_credits  Int
-  
-  // Relations
-  students       Student[]
+  program_id      String      @id @default(uuid())
+  program_name    String
+  program_type    ProgramType
+  total_credits   Int
+  created_at      DateTime    @default(now())
+  updated_at      DateTime    @updatedAt
   program_courses ProgramCourse[]
-  
-  // Timestamps
-  created_at     DateTime    @default(now())
-  updated_at     DateTime    @updatedAt
-  
+  students        Student[]
+
   @@map("programs")
 }
 
 model Course {
-  course_id             String      @id @default(uuid())
-  course_title           String
-  course_code           String      @unique
+  course_id        String      @id @default(uuid())
+  course_title     String
+  course_code      String      @unique
   course_credits   Int
-  course_type           CourseType
+  course_type      CourseType
   default_capacity Int
-  course_desc           String
-  
-  // Relations
-  program_courses ProgramCourse[]
-  session_courses SessionCourse[]
-  enrollments    Enrollment[]
-  
-  // Timestamps
-  created_at     DateTime    @default(now())
-  updated_at     DateTime    @updatedAt
-  
+  course_desc      String
+  created_at       DateTime    @default(now())
+  updated_at       DateTime    @updatedAt
+  enrollments      Enrollment[]
+  program_courses  ProgramCourse[]
+  session_courses  SessionCourse[]
+
   @@map("courses")
 }
 
 model Session {
-  session_id                String        @id @default(uuid())
-  session_name              String
-  start_date        DateTime
-  end_date          DateTime
+  session_id          String        @id @default(uuid())
+  session_name        String
+  start_date          DateTime
+  end_date            DateTime
   enrollment_deadline DateTime
-  session_status            SessionStatus
-  
-  // Relations
-  session_courses   SessionCourse[]
-  enrollments       Enrollment[]
-  
-  // Timestamps
-  created_at        DateTime      @default(now())
-  updated_at        DateTime      @updatedAt
-  
+  session_status      SessionStatus
+  created_at          DateTime      @default(now())
+  updated_at          DateTime      @updatedAt
+  enrollments         Enrollment[]
+  session_courses     SessionCourse[]
+
   @@map("sessions")
 }
 
 model Student {
-  id             String    @id @default(uuid())
-  student_id     String    @unique
-  first_name     String?
-  last_name      String?
-  email          String    @unique
+  id              String      @id @default(uuid())
+  student_id      String      @unique
+  first_name      String?
+  last_name       String?
+  email           String      @unique
   profile_picture String?
-  
-  // Relations
-  program_id     String
-  program        Program   @relation(fields: [program_id], references: [program_id])
-  enrollments    Enrollment[]
-  
-  // User authentication
-  user_id        String?   @unique
-  
-  // Timestamps
-  created_at     DateTime  @default(now())
-  updated_at     DateTime  @updatedAt
-  
+  program_id      String
+  user_id         String?     @unique
+  created_at      DateTime    @default(now())
+  updated_at      DateTime    @updatedAt
+  enrollments     Enrollment[]
+  program         Program     @relation(fields: [program_id], references: [program_id])
+
   @@map("students")
 }
 
 model Registrar {
-  registrar_id             String    @id @default(uuid())
-  first_name     String?
-  last_name      String?
-  email          String    @unique
+  registrar_id    String      @id @default(uuid())
+  first_name      String?
+  last_name       String?
+  email           String      @unique
   profile_picture String?
-  is_suspended   Boolean   @default(false)
-  
-  // Relations
-  enrollments    Enrollment[]
-  
-  // User authentication
-  user_id        String?   @unique
-  
-  // Timestamps
-  created_at     DateTime  @default(now())
-  updated_at     DateTime  @updatedAt
-  
+  user_id         String?     @unique
+  created_at      DateTime    @default(now())
+  updated_at      DateTime    @updatedAt
+  is_suspended    Boolean     @default(false)
+  enrollments     Enrollment[]
+
   @@map("registrars")
 }
 
 model Enrollment {
-  enrollment_id       String          @id @default(uuid())
-  enrollment_status   EnrollmentStatus
-  special_request     Boolean         @default(false)
-  rejection_reason    String?
-  
-  // Relations
-  student_id       String
-  student          Student         @relation(fields: [student_id], references: [id])
-  course_id        String
-  course           Course          @relation(fields: [course_id], references: [course_id])
-  session_id       String
-  session          Session         @relation(fields: [session_id], references: [session_id])
-  registrar_id     String?
-  registrar        Registrar?      @relation(fields: [registrar_id], references: [registrar_id])
-  
-  // Timestamps
-  created_at       DateTime        @default(now())
-  updated_at       DateTime        @updatedAt
-  
-  // Constraints
+  enrollment_id     String          @id @default(uuid())
+  enrollment_status EnrollmentStatus
+  special_request   Boolean         @default(false)
+  rejection_reason  String?
+  student_id        String
+  course_id         String
+  session_id        String
+  registrar_id      String?
+  created_at        DateTime        @default(now())
+  updated_at        DateTime        @updatedAt
+  course            Course          @relation(fields: [course_id], references: [course_id])
+  registrar         Registrar?      @relation(fields: [registrar_id], references: [registrar_id])
+  session           Session         @relation(fields: [session_id], references: [session_id])
+  student           Student         @relation(fields: [student_id], references: [id])
+
   @@unique([student_id, course_id, session_id], name: "unique_enrollment_not_rejected")
   @@map("enrollments")
 }
 
 model ProgramCourse {
-  program_id        String
-  program           Program    @relation(fields: [program_id], references: [program_id])
-  course_id         String
-  course            Course     @relation(fields: [course_id], references: [course_id])
-  
-  // Timestamps
-  created_at        DateTime   @default(now())
-  updated_at        DateTime   @updatedAt
-  
+  program_id      String
+  course_id       String
+  created_at      DateTime    @default(now())
+  updated_at      DateTime    @updatedAt
+  course          Course      @relation(fields: [course_id], references: [course_id])
+  program         Program     @relation(fields: [program_id], references: [program_id])
+
   @@id([program_id, course_id])
   @@map("program_courses")
 }
 
 model SessionCourse {
   session_id        String
-  session           Session    @relation(fields: [session_id], references: [session_id])
   course_id         String
-  course            Course     @relation(fields: [course_id], references: [course_id])
-  status            String     @default("OPEN")
+  status            String      @default("OPEN")
   adjusted_capacity Int
-  
-  // Timestamps
-  created_at        DateTime   @default(now())
-  updated_at        DateTime   @updatedAt
-  
+  created_at        DateTime    @default(now())
+  updated_at        DateTime    @updatedAt
+  course            Course      @relation(fields: [course_id], references: [course_id])
+  session           Session     @relation(fields: [session_id], references: [session_id])
+
   @@id([session_id, course_id])
   @@map("session_courses")
 }
 
 model Invitation {
-  invitation_id               String           @id @default(uuid())
-  email            String
-  token            String           @unique
-  expires_at       DateTime
-  status           InvitationStatus
-  user_type        UserType
-  student_id       String?
-  registrar_id     String?
-  
-  // Timestamps
-  created_at       DateTime         @default(now())
-  updated_at       DateTime         @updatedAt
-  
+  invitation_id   String           @id @default(uuid())
+  email          String
+  token          String           @unique @default(uuid())
+  expires_at     DateTime
+  status         InvitationStatus
+  user_type      UserType
+  student_id     String?
+  registrar_id   String?
+  created_at     DateTime         @default(now())
+  updated_at     DateTime         @updatedAt
+
   @@unique([email, status], name: "unique_active_invitation")
   @@map("invitations")
 }
