@@ -8,7 +8,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateRegistrarDto } from '../dto/create-registrar.dto';
 import { UpdateRegistrarDto } from '../dto/update-registrar.dto';
 import { InviteRegistrarDto } from '../dto/invite-registrar.dto';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 interface PrismaError extends Error {
   code?: string;
@@ -27,7 +27,8 @@ function isError(error: unknown): error is Error {
  */
 function safeUuidv4(): string {
   try {
-    return uuidv4();
+    // Use Node.js built-in crypto module which has proper typing
+    return randomUUID();
   } catch {
     // Extremely unlikely, but just in case
     return `fallback-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;

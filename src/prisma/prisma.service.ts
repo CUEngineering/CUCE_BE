@@ -32,7 +32,7 @@ export class PrismaService
   async onModuleInit(): Promise<void> {
     try {
       this.logger.log('Connecting to database...');
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+
       await this.$connect();
       this.logger.log('Successfully connected to database');
     } catch (error) {
@@ -47,7 +47,7 @@ export class PrismaService
   async onModuleDestroy(): Promise<void> {
     try {
       this.logger.log('Disconnecting from database...');
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+
       await this.$disconnect();
       this.logger.log('Successfully disconnected from database');
     } catch (error) {

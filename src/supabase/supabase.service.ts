@@ -99,7 +99,7 @@ export class SupabaseService {
       }
 
       return { message: 'Successfully logged out' };
-    } catch (error) {
+    } catch {
       throw new InternalServerErrorException('Logout failed');
     }
   }
@@ -116,7 +116,7 @@ export class SupabaseService {
       }
 
       return user;
-    } catch (error) {
+    } catch {
       throw new UnauthorizedException('Unable to retrieve current user');
     }
   }

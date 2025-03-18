@@ -11,6 +11,8 @@ import {
 import { SupabaseService } from './supabase.service';
 import { AuthGuard } from './auth.guard';
 import { SignUpDto, SignInDto } from './dto/auth.dto';
+import { Request } from 'express';
+import { User } from '@supabase/supabase-js';
 
 @Controller('auth')
 export class SupabaseController {
@@ -36,7 +38,7 @@ export class SupabaseController {
 
   @Get('me')
   @UseGuards(AuthGuard)
-  async getCurrentUser(@Req() req) {
+  getCurrentUser(@Req() req: Request & { user: User }): User {
     return req.user;
   }
 }

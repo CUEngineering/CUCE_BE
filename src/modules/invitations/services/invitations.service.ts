@@ -6,18 +6,55 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AcceptInvitationDto } from '../dto/accept-invitation.dto';
-import { ResendInvitationDto } from '../dto/resend-invitation.dto';
-import { v4 as uuidv4 } from 'uuid';
-import { Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
+
+// Define custom Invitation type based on Prisma schema
+export type Invitation = {
+  invitation_id: string;
+  email: string;
+  token: string;
+  expires_at: Date;
+  status: string;
+  user_type: string;
+  student_id?: string | null;
+  registrar_id?: string | null;
+  created_at: Date;
+  updated_at: Date;
+};
+
+/**
+ * Type guard to check if a value is an Error
+ */
+function isError(error: unknown): error is Error {
+  return error instanceof Error;
+}
+
+/**
+ * Type guard to verify AcceptInvitationDto properties
+ */
+function hasRequiredDtoProperties(
+  dto: AcceptInvitationDto,
+): dto is AcceptInvitationDto & {
+  firstName: string;
+  lastName: string;
+  password: string;
+} {
+  return (
+    typeof dto.firstName === 'string' &&
+    typeof dto.lastName === 'string' &&
+    typeof dto.password === 'string'
+  );
+}
 
 /**
  * Function to safely generate a UUID
  */
 function safeUuidv4(): string {
   try {
-    return uuidv4();
+    // Use Node.js built-in crypto module which has proper typing
+    return randomUUID();
   } catch {
-    // Extremely unlikely, but just in case
+    // Fallback mechanism
     return `fallback-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
   }
 }
@@ -26,7 +63,7 @@ function safeUuidv4(): string {
 export class InvitationsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(status?: string) {
+  async findAll(status?: string): Promise<Invitation[]> {
     try {
       const where: Record<string, any> = {};
 
@@ -52,7 +89,7 @@ export class InvitationsService {
     }
   }
 
-  async findOne(invitation_id: string) {
+  async findOne(invitation_id: string): Promise<Invitation> {
     try {
       const invitation = await this.prisma.invitation.findUnique({
         where: { invitation_id },
@@ -83,8 +120,8 @@ export class InvitationsService {
 
   async acceptInvitation(
     invitation_id: string,
-    acceptInvitationDto: AcceptInvitationDto,
-  ) {
+    dto: AcceptInvitationDto,
+  ): Promise<{ success: boolean; message: string }> {
     try {
       const invitation = await this.findOne(invitation_id);
 
@@ -102,22 +139,23 @@ export class InvitationsService {
         },
       });
 
-      // Since there's no User model in the schema, we need to handle this differently
-      // Currently, Registrar and Student models have user_id fields that reference
-      // an external authentication system
-
       // If this is a registrar invitation, create the registrar record
       if (invitation.user_type === 'REGISTRAR') {
         const registrar_id = safeUuidv4();
-        const firstName = acceptInvitationDto.firstName;
-        const lastName = acceptInvitationDto.lastName;
+
+        // Validate DTO has required properties
+        if (!hasRequiredDtoProperties(dto)) {
+          throw new BadRequestException(
+            'Missing required fields in invitation acceptance',
+          );
+        }
 
         await this.prisma.registrar.create({
           data: {
             registrar_id,
             email: invitation.email,
-            first_name: firstName,
-            last_name: lastName,
+            first_name: dto.firstName,
+            last_name: dto.lastName,
             // We would normally set user_id here to link to auth system
           },
         });
@@ -142,7 +180,7 @@ export class InvitationsService {
         throw error;
       }
 
-      if (error instanceof Error) {
+      if (isError(error)) {
         throw new InternalServerErrorException(
           `Failed to accept invitation: ${error.message}`,
         );

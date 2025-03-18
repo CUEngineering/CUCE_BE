@@ -20,14 +20,17 @@ async function testConnection() {
     console.log('Testing Supabase connection...');
 
     // Get database time using raw SQL
-    const { data, error } = await supabase.rpc('get_database_time');
+    const result = await supabase.rpc('get_database_time');
+    const data = result.data;
+    const error = result.error;
 
     if (error) {
       console.error('Error executing function:', error);
 
       // Create a simple test function if it doesn't exist
       console.log('Creating test function...');
-      const { error: createError } = await supabase.rpc('create_test_function');
+      const createResult = await supabase.rpc('create_test_function');
+      const createError = createResult.error;
 
       if (createError) {
         console.error('Error creating function:', createError);
@@ -40,8 +43,10 @@ async function testConnection() {
         console.log('Test function created successfully');
 
         // Try the function again
-        const { data: newData, error: newError } =
-          await supabase.rpc('get_database_time');
+        const newResult = await supabase.rpc('get_database_time');
+        const newData = newResult.data;
+        const newError = newResult.error;
+
         if (newError) {
           console.error('Error after creating function:', newError);
         } else {
