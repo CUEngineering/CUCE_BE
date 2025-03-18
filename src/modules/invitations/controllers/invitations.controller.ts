@@ -12,7 +12,6 @@ import {
 } from '@nestjs/common';
 import { InvitationsService } from '../services/invitations.service';
 import { AcceptInvitationDto } from '../dto/accept-invitation.dto';
-import { ResendInvitationDto } from '../dto/resend-invitation.dto';
 
 @Controller('invitations')
 export class InvitationsController {
@@ -68,11 +67,16 @@ export class InvitationsController {
   }
 
   @Post(':id/resend')
-  resend(
-    @Param('id') id: string,
-    @Body() resendInvitationDto: ResendInvitationDto,
-  ) {
-    return this.invitationsService.resendInvitation(id, resendInvitationDto);
+  async resend(@Param('id') id: string) {
+    try {
+      const result = await this.invitationsService.resendInvitation(id);
+      return result;
+    } catch (error: unknown) {
+      throw new HttpException(
+        error instanceof Error ? error.message : 'Failed to resend invitation',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 
   @Put(':id/cancel')

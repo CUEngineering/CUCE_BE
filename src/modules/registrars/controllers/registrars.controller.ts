@@ -8,7 +8,9 @@ import {
   Delete,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
+import { AuthGuard } from '../../../supabase/auth.guard';
 import { RegistrarsService } from '../services/registrars.service';
 import {
   InviteRegistrarDto,
@@ -24,6 +26,7 @@ interface InvitationResult {
 }
 
 @Controller('registrars')
+@UseGuards(AuthGuard)
 export class RegistrarsController {
   constructor(private readonly registrarsService: RegistrarsService) {}
 
@@ -86,14 +89,13 @@ export class RegistrarsController {
   }
 
   @Delete('invitations/:id')
-  @HttpCode(HttpStatus.NO_CONTENT)
   async cancelInvitation(@Param('id') id: string) {
     return this.registrarsService.cancelInvitation(id);
   }
 
   @Post(':id/suspend')
   async suspendRegistrar(@Param('id') id: string) {
-    return this.registrarsService.suspendRegistrar(id);
+    return this.registrarsService.suspend(id);
   }
 
   @Post(':id/unsuspend')
