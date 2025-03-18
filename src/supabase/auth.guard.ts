@@ -4,15 +4,18 @@ import {
   ExecutionContext,
   UnauthorizedException,
   Inject,
+  Optional,
 } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { Request } from 'express';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(
     @Inject('SUPABASE_CLIENT')
     private readonly supabase: SupabaseClient,
+    @Optional() private readonly configService?: ConfigService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -40,7 +43,7 @@ export class AuthGuard implements CanActivate {
       (request as Request & { user: typeof data.user }).user = data.user;
       return true;
     } catch (error) {
-      // Log the error for debugging purposes
+      // Log the error for debugging
       console.error('Authentication error:', error);
       throw new UnauthorizedException('Authentication failed');
     }
