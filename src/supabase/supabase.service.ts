@@ -5,14 +5,151 @@ import {
   ConflictException,
   InternalServerErrorException,
 } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
+import { SupabaseClient, createClient } from '@supabase/supabase-js';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class SupabaseService {
   constructor(
     @Inject('SUPABASE_CLIENT')
     private readonly supabase: SupabaseClient,
+    private readonly configService: ConfigService,
   ) {}
+
+  /**
+   * Get a Supabase client instance authenticated with the user's access token
+   * This ensures RLS policies are enforced for the authenticated user
+   */
+  getClientWithAuth(accessToken: string): SupabaseClient {
+    const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
+    const supabaseKey = this.configService.get<string>('SUPABASE_ANON_KEY');
+
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('Supabase URL and Anon Key must be provided');
+    }
+
+    return createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+      global: {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      },
+    });
+  }
+
+  /**
+   * Select data from a table with RLS enforcement
+   */
+  async select(
+    accessToken: string,
+    table: string,
+    query: {
+      columns?: string;
+      filter?: Record<string, any>;
+      limit?: number;
+      offset?: number;
+      orderBy?: { column: string; ascending?: boolean };
+    },
+  ) {
+    const client = this.getClientWithAuth(accessToken);
+    let queryBuilder = client.from(table).select(query.columns || '*');
+
+    if (query.filter) {
+      queryBuilder = queryBuilder.match(query.filter);
+    }
+
+    if (query.limit) {
+      queryBuilder = queryBuilder.limit(query.limit);
+    }
+
+    if (query.offset) {
+      queryBuilder = queryBuilder.range(
+        query.offset,
+        query.offset + (query.limit || 10) - 1,
+      );
+    }
+
+    if (query.orderBy) {
+      queryBuilder = queryBuilder.order(query.orderBy.column, {
+        ascending: query.orderBy.ascending ?? true,
+      });
+    }
+
+    const { data, error } = await queryBuilder;
+
+    if (error) {
+      throw new InternalServerErrorException(error.message);
+    }
+
+    return data;
+  }
+
+  /**
+   * Insert data into a table with RLS enforcement
+   */
+  async insert(accessToken: string, table: string, data: Record<string, any>) {
+    const client = this.getClientWithAuth(accessToken);
+    const { data: result, error } = await client
+      .from(table)
+      .insert(data)
+      .select();
+
+    if (error) {
+      throw new InternalServerErrorException(error.message);
+    }
+
+    return result;
+  }
+
+  /**
+   * Update data in a table with RLS enforcement
+   */
+  async update(
+    accessToken: string,
+    table: string,
+    filter: Record<string, any>,
+    data: Record<string, any>,
+  ) {
+    const client = this.getClientWithAuth(accessToken);
+    const { data: result, error } = await client
+      .from(table)
+      .update(data)
+      .match(filter)
+      .select();
+
+    if (error) {
+      throw new InternalServerErrorException(error.message);
+    }
+
+    return result;
+  }
+
+  /**
+   * Delete data from a table with RLS enforcement
+   */
+  async delete(
+    accessToken: string,
+    table: string,
+    filter: Record<string, any>,
+  ) {
+    const client = this.getClientWithAuth(accessToken);
+    const { data: result, error } = await client
+      .from(table)
+      .delete()
+      .match(filter)
+      .select();
+
+    if (error) {
+      throw new InternalServerErrorException(error.message);
+    }
+
+    return result;
+  }
 
   async signUp(email: string, password: string) {
     try {

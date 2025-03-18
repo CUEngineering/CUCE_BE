@@ -1,7 +1,16 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  UseGuards,
+  Req,
+} from '@nestjs/common';
 import { ProgramService } from '../services/program.service';
 import { CreateProgramDto } from '../dto/create-program.dto';
 import { AuthGuard } from '../../../supabase/auth.guard';
+import { Request } from 'express';
 
 @Controller('programs')
 @UseGuards(AuthGuard) // Apply authentication guard to all endpoints
@@ -9,27 +18,39 @@ export class ProgramController {
   constructor(private readonly programService: ProgramService) {}
 
   @Post()
-  async create(@Body() createProgramDto: CreateProgramDto) {
-    return this.programService.create(createProgramDto);
+  async create(
+    @Body() createProgramDto: CreateProgramDto,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.programService.create(createProgramDto, req.accessToken);
   }
 
   @Get()
-  async findAll() {
-    return this.programService.findAll();
+  async findAll(@Req() req: Request & { accessToken: string }) {
+    return this.programService.findAll(req.accessToken);
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string) {
-    return this.programService.findOne(id);
+  async findOne(
+    @Param('id') id: string,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.programService.findOne(id, req.accessToken);
   }
 
   @Get(':id/courses')
-  async getProgramCourses(@Param('id') id: string) {
-    return this.programService.getProgramCourses(id);
+  async getProgramCourses(
+    @Param('id') id: string,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.programService.getProgramCourses(id, req.accessToken);
   }
 
   @Get(':id/students')
-  async getProgramStudents(@Param('id') id: string) {
-    return this.programService.getProgramStudents(id);
+  async getProgramStudents(
+    @Param('id') id: string,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.programService.getProgramStudents(id, req.accessToken);
   }
 }

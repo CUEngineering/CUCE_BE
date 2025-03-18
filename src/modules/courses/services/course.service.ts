@@ -1,24 +1,22 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateCourseDto } from '../dto/create-course.dto';
+import { SupabaseService } from '../../../supabase/supabase.service';
 
 @Injectable()
 export class CourseService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private readonly supabaseService: SupabaseService) {}
 
-  async create(createCourseDto: CreateCourseDto) {
-    return this.prisma.course.create({
-      data: createCourseDto,
-    });
+  async create(createCourseDto: CreateCourseDto, accessToken: string) {
+    return this.supabaseService.insert(accessToken, 'courses', createCourseDto);
   }
 
-  async findAll() {
-    return this.prisma.course.findMany();
+  async findAll(accessToken: string) {
+    return this.supabaseService.select(accessToken, 'courses', {});
   }
 
-  async findOne(id: string) {
-    return this.prisma.course.findUnique({
-      where: { course_id: id },
+  async findOne(id: string, accessToken: string) {
+    return this.supabaseService.select(accessToken, 'courses', {
+      filter: { course_id: id },
     });
   }
 }

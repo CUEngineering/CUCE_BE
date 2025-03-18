@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { SupabaseService } from './supabase.service';
 import { SupabaseController } from './supabase.controller';
 import { AuthGuard } from './auth.guard';
+import { BaseSupabaseService } from './base.service';
 
 @Global()
 @Module({
@@ -11,6 +12,7 @@ import { AuthGuard } from './auth.guard';
   controllers: [SupabaseController],
   providers: [
     SupabaseService,
+    BaseSupabaseService,
     AuthGuard,
     {
       provide: 'SUPABASE_CLIENT',
@@ -27,6 +29,6 @@ import { AuthGuard } from './auth.guard';
       inject: [ConfigService],
     },
   ],
-  exports: ['SUPABASE_CLIENT', SupabaseService, AuthGuard],
+  exports: ['SUPABASE_CLIENT', SupabaseService, BaseSupabaseService, AuthGuard],
 })
 export class SupabaseModule {}

@@ -39,8 +39,14 @@ export class AuthGuard implements CanActivate {
         throw new UnauthorizedException('Invalid token');
       }
 
-      // Explicitly type the request.user
-      (request as Request & { user: typeof data.user }).user = data.user;
+      // Store both user and access token in request
+      (
+        request as Request & { user: typeof data.user; accessToken: string }
+      ).user = data.user;
+      (
+        request as Request & { user: typeof data.user; accessToken: string }
+      ).accessToken = token;
+
       return true;
     } catch (error) {
       // Log the error for debugging
