@@ -1,4 +1,4 @@
-import { IsEmail, IsArray, ValidateNested, IsOptional } from 'class-validator';
+import { IsEmail, IsArray, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class EmailDto {

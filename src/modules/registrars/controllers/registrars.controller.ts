@@ -8,7 +8,6 @@ import {
   Delete,
   HttpCode,
   HttpStatus,
-  Query,
 } from '@nestjs/common';
 import { RegistrarsService } from '../services/registrars.service';
 import {
@@ -103,10 +102,7 @@ export class RegistrarsController {
   }
 
   @Get(':id/stats')
-  async getRegistrarStats(
-    @Param('id') id: string,
-    @Query('sessionId') sessionId?: string,
-  ) {
-    return this.registrarsService.getRegistrarStats(id, sessionId);
+  async getRegistrarStats(@Param('id') id: string) {
+    return this.registrarsService.getRegistrarStats(id);
   }
 }
