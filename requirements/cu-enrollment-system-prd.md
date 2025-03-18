@@ -363,6 +363,32 @@ The CU Course Enrollment Platform transforms the traditional enrollment process 
    - If rejecting, appropriate reason is selected
    - Student is notified of the decision
 
+### 5.5 Enrollment Status Lifecycle
+
+1. **Status Flow**:
+
+   - **PENDING**: Initial state when a student submits an enrollment request
+   - **APPROVED**: Registrar has approved the enrollment, but the course hasn't started yet
+   - **REJECTED**: Registrar has denied the enrollment with a specific reason
+   - **ACTIVE**: Course is currently in progress (transitioned from APPROVED when session becomes active)
+   - **COMPLETED**: Student has finished the course (transitioned from ACTIVE when session ends)
+   - **CANCELLED**: Enrollment was cancelled after initial processing (can occur at any non-terminal stage)
+
+2. **Status Transitions**:
+
+   - PENDING → APPROVED: Registrar approves the enrollment request
+   - PENDING → REJECTED: Registrar rejects the enrollment request
+   - PENDING → CANCELLED: Student or administrator cancels the pending request
+   - APPROVED → ACTIVE: Automatic transition when session status changes to ACTIVE
+   - APPROVED → CANCELLED: Student or administrator cancels the approved enrollment
+   - ACTIVE → COMPLETED: Automatic transition when session status changes to CLOSED
+   - ACTIVE → CANCELLED: Student withdraws from an active course
+
+3. **Terminal States**:
+   - REJECTED, COMPLETED, and CANCELLED are considered terminal states
+   - Once an enrollment reaches a terminal state, no further transitions occur
+   - A new enrollment request must be created if needed after a terminal state
+
 ## 6. Technical Requirements
 
 ### 6.1 System Architecture

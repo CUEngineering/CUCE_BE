@@ -39,6 +39,9 @@ enum EnrollmentStatus {
   PENDING
   APPROVED
   REJECTED
+  ACTIVE
+  COMPLETED
+  CANCELLED
 }
 
 enum UserType {
@@ -51,6 +54,7 @@ enum InvitationStatus {
   PENDING
   ACCEPTED
   EXPIRED
+  CANCELLED
 }
 
 // Define models based on ERD
@@ -140,6 +144,7 @@ model Registrar {
   last_name      String?
   email          String    @unique
   profile_picture String?
+  is_suspended   Boolean   @default(false)
   
   // Relations
   enrollments    Enrollment[]

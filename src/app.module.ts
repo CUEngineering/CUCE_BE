@@ -10,6 +10,8 @@ import { ProgramsModule } from './modules/programs/programs.module';
 import { RegistrarsModule } from './modules/registrars/registrars.module';
 import { InvitationsModule } from './modules/invitations/invitations.module';
 import { HealthModule } from './modules/health/health.module';
+import { EnrollmentsModule } from './modules/enrollments/enrollments.module';
+import { SessionsModule } from './modules/sessions/sessions.module';
 
 @Module({
   imports: [
@@ -25,6 +27,8 @@ import { HealthModule } from './modules/health/health.module';
     RegistrarsModule,
     InvitationsModule,
     HealthModule,
+    EnrollmentsModule,
+    SessionsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
