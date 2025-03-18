@@ -340,16 +340,16 @@ export class RegistrarsService {
       // Verify registrar exists
       await this.findOne(registrar_id);
 
-      const sessions = await this.prisma.session.findMany({
+      // Instead of finding sessions directly, we'll find the sessions through enrollments
+      const enrollments = await this.prisma.enrollment.findMany({
         where: { registrar_id },
         include: {
-          course: true,
+          session: true,
         },
       });
 
-      const enrollments = await this.prisma.enrollment.findMany({
-        where: { registrar_id },
-      });
+      // Get unique sessions from enrollments
+      const uniqueSessions = [...new Set(enrollments.map((e) => e.session_id))];
 
       const activeEnrollments = enrollments.filter(
         (e) => e.enrollment_status === 'ACTIVE',
@@ -364,7 +364,7 @@ export class RegistrarsService {
       );
 
       return {
-        totalSessions: sessions.length,
+        totalSessions: uniqueSessions.length,
         totalEnrollments: enrollments.length,
         activeEnrollments: activeEnrollments.length,
         completedEnrollments: completedEnrollments.length,
