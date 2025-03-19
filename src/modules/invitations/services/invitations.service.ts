@@ -401,18 +401,71 @@ export class InvitationsService {
    */
   async cancelInvitation(invitation_id: string) {
     try {
-      const invitation = await this.findOne(invitation_id);
+      // Validate input
+      if (!invitation_id) {
+        throw new BadRequestException('Invitation ID is required');
+      }
 
+      // Validate UUID format
+      if (!this.isValidUUID(invitation_id)) {
+        throw new BadRequestException('Invalid invitation ID format');
+      }
+
+      // Attempt to find the invitation
+      let invitation;
+      try {
+        invitation = await this.findOne(invitation_id);
+      } catch (findError) {
+        // Distinguish between different types of not found errors
+        if (findError instanceof NotFoundException) {
+          throw new NotFoundException(
+            `No invitation found with ID ${invitation_id}`,
+          );
+        }
+
+        // Handle potential database connection or network errors
+        this.logger.error(
+          `Database error when finding invitation: ${findError.message}`,
+          findError.stack,
+        );
+        throw new InternalServerErrorException(
+          'Unable to retrieve invitation due to a system error',
+        );
+      }
+
+      // Check invitation status
       if (invitation.status !== InvitationStatus.PENDING) {
         throw new BadRequestException(
           `Invitation is ${invitation.status.toLowerCase()}, cannot be cancelled`,
         );
       }
 
-      const updatedInvitation = await this.updateInvitationStatus(
-        invitation_id,
-        InvitationStatus.CANCELLED,
-      );
+      // Attempt to update invitation status
+      let updatedInvitation;
+      try {
+        updatedInvitation = await this.updateInvitationStatus(
+          invitation_id,
+          InvitationStatus.CANCELLED,
+        );
+      } catch (updateError) {
+        // Log detailed error information
+        this.logger.error(
+          `Failed to update invitation status: ${updateError.message}`,
+          updateError.stack,
+        );
+
+        // Check for specific error types
+        if (updateError.code === 'P2002') {
+          throw new InternalServerErrorException(
+            'Unique constraint violation during invitation cancellation',
+          );
+        }
+
+        // Generic database update error
+        throw new InternalServerErrorException(
+          `Unable to cancel invitation: ${updateError.message}`,
+        );
+      }
 
       return {
         success: true,
@@ -420,6 +473,7 @@ export class InvitationsService {
         invitation: updatedInvitation,
       };
     } catch (error) {
+      // Rethrow known error types
       if (
         error instanceof NotFoundException ||
         error instanceof BadRequestException
@@ -427,14 +481,27 @@ export class InvitationsService {
         throw error;
       }
 
+      // Log unexpected errors
       this.logger.error(
-        `Failed to cancel invitation: ${error.message}`,
+        `Unexpected error during invitation cancellation: ${error.message}`,
         error.stack,
       );
+
+      // Provide a generic error response for unexpected errors
       throw new InternalServerErrorException(
-        `Failed to cancel invitation: ${error.message}`,
+        `Failed to cancel invitation: An unexpected error occurred`,
       );
     }
+  }
+
+  /**
+   * Validate UUID format
+   */
+  private isValidUUID(uuid: string): boolean {
+    if (!uuid) return false;
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(uuid);
   }
 
   /**
