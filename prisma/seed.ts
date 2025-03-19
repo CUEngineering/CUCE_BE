@@ -143,7 +143,7 @@ async function main() {
   // Create a Student
   const student = await prisma.student.create({
     data: {
-      student_id: 'ST001',
+      student_id: randomUUID(),
       first_name: 'Jane',
       last_name: 'Smith',
       email: 'jane.smith@example.com',

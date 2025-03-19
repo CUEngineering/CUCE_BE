@@ -53,7 +53,7 @@ enum InvitationStatus {
 
 // Define models based on ERD
 model Program {
-  program_id      String      @id @default(uuid())
+  program_id      String      @id @default(uuid()) @db.Uuid
   program_name    String
   program_type    ProgramType
   total_credits   Int
@@ -66,7 +66,7 @@ model Program {
 }
 
 model Course {
-  course_id        String      @id @default(uuid())
+  course_id        String      @id @default(uuid()) @db.Uuid
   course_title     String
   course_code      String      @unique
   course_credits   Int
@@ -83,7 +83,7 @@ model Course {
 }
 
 model Session {
-  session_id          String        @id @default(uuid())
+  session_id          String        @id @default(uuid()) @db.Uuid
   session_name        String
   start_date          DateTime
   end_date            DateTime
@@ -98,14 +98,14 @@ model Session {
 }
 
 model Student {
-  id              String      @id @default(uuid())
-  student_id      String      @unique
+  id              String      @id @default(uuid()) @db.Uuid
+  student_id      String      @unique @default(uuid()) @db.Uuid
   first_name      String?
   last_name       String?
   email           String      @unique
   profile_picture String?
-  program_id      String
-  user_id         String?     @unique
+  program_id      String      @db.Uuid
+  user_id         String      @unique @db.Uuid
   created_at      DateTime    @default(now())
   updated_at      DateTime    @updatedAt
   enrollments     Enrollment[]
@@ -115,12 +115,12 @@ model Student {
 }
 
 model Registrar {
-  registrar_id    String      @id @default(uuid())
+  registrar_id    String      @id @default(uuid()) @db.Uuid
   first_name      String?
   last_name       String?
   email           String      @unique
   profile_picture String?
-  user_id         String?     @unique
+  user_id         String      @unique @db.Uuid
   created_at      DateTime    @default(now())
   updated_at      DateTime    @updatedAt
   is_suspended    Boolean     @default(false)
@@ -130,14 +130,14 @@ model Registrar {
 }
 
 model Enrollment {
-  enrollment_id     String          @id @default(uuid())
+  enrollment_id     String          @id @default(uuid()) @db.Uuid
   enrollment_status EnrollmentStatus
   special_request   Boolean         @default(false)
   rejection_reason  String?
-  student_id        String
-  course_id         String
-  session_id        String
-  registrar_id      String?
+  student_id        String          @db.Uuid
+  course_id         String          @db.Uuid
+  session_id        String          @db.Uuid
+  registrar_id      String?         @db.Uuid
   created_at        DateTime        @default(now())
   updated_at        DateTime        @updatedAt
   course            Course          @relation(fields: [course_id], references: [course_id])
@@ -150,8 +150,8 @@ model Enrollment {
 }
 
 model ProgramCourse {
-  program_id      String
-  course_id       String
+  program_id      String      @db.Uuid
+  course_id       String      @db.Uuid
   created_at      DateTime    @default(now())
   updated_at      DateTime    @updatedAt
   course          Course      @relation(fields: [course_id], references: [course_id])
@@ -162,8 +162,8 @@ model ProgramCourse {
 }
 
 model SessionCourse {
-  session_id        String
-  course_id         String
+  session_id        String      @db.Uuid
+  course_id         String      @db.Uuid
   status            String      @default("OPEN")
   adjusted_capacity Int
   created_at        DateTime    @default(now())
@@ -176,14 +176,14 @@ model SessionCourse {
 }
 
 model Invitation {
-  invitation_id   String           @id @default(uuid())
+  invitation_id   String           @id @default(uuid()) @db.Uuid
   email          String
-  token          String           @unique @default(uuid())
+  token          String           @unique @default(uuid()) @db.Uuid
   expires_at     DateTime
   status         InvitationStatus
   user_type      UserType
-  student_id     String?
-  registrar_id   String?
+  student_id     String?          @db.Uuid
+  registrar_id   String?          @db.Uuid
   created_at     DateTime         @default(now())
   updated_at     DateTime         @updatedAt
 
