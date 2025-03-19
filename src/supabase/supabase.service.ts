@@ -10,11 +10,30 @@ import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class SupabaseService {
+  private adminClient: SupabaseClient;
+
   constructor(
     @Inject('SUPABASE_CLIENT')
     private readonly supabase: SupabaseClient,
     private readonly configService: ConfigService,
-  ) {}
+  ) {
+    // Initialize admin client with service role key
+    const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
+    const supabaseServiceKey = this.configService.get<string>(
+      'SUPABASE_SERVICE_ROLE_KEY',
+    );
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error('Supabase URL and Service Role Key must be provided');
+    }
+
+    this.adminClient = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+  }
 
   /**
    * Get a Supabase client instance authenticated with the user's access token
@@ -151,11 +170,20 @@ export class SupabaseService {
     return result;
   }
 
-  async signUp(email: string, password: string) {
+  async signUp(
+    email: string,
+    password: string,
+    options?: { email_confirm?: boolean },
+  ) {
     try {
       const { data, error } = await this.supabase.auth.signUp({
         email,
         password,
+        options: {
+          data: {
+            email_confirmed: options?.email_confirm,
+          },
+        },
       });
 
       if (error) {
@@ -255,6 +283,25 @@ export class SupabaseService {
       return user;
     } catch {
       throw new UnauthorizedException('Unable to retrieve current user');
+    }
+  }
+
+  async deleteUser(userId: string) {
+    try {
+      const { error } = await this.adminClient.auth.admin.deleteUser(userId);
+
+      if (error) {
+        throw new InternalServerErrorException(
+          `Failed to delete user: ${error.message}`,
+        );
+      }
+
+      return true;
+    } catch (error) {
+      if (error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('Failed to delete user');
     }
   }
 }
