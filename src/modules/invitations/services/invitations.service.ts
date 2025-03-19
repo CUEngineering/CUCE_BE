@@ -28,6 +28,16 @@ export class InvitationsService {
    */
   async findAll(status?: string) {
     try {
+      // Validate status input if provided
+      if (
+        status &&
+        !Object.values(InvitationStatus).includes(
+          status.toUpperCase() as InvitationStatus,
+        )
+      ) {
+        throw new BadRequestException(`Invalid invitation status: ${status}`);
+      }
+
       // Use a safe record for the where clause with proper typing
       const where: Record<string, any> = {};
 
@@ -36,19 +46,47 @@ export class InvitationsService {
         where.status = status.toUpperCase() as InvitationStatus;
       }
 
-      return await this.prisma.invitations.findMany({
-        where,
-        orderBy: {
-          created_at: 'desc',
-        },
-      });
+      try {
+        const invitations = await this.prisma.invitations.findMany({
+          where,
+          orderBy: {
+            created_at: 'desc',
+          },
+        });
+
+        return invitations;
+      } catch (dbError) {
+        // Log detailed database error
+        this.logger.error(
+          `Database error when finding invitations: ${dbError.message}`,
+          dbError.stack,
+        );
+
+        // Check for specific Prisma error codes
+        if (dbError.code === 'P1001') {
+          throw new InternalServerErrorException(
+            'Unable to connect to the database',
+          );
+        }
+
+        throw new InternalServerErrorException(
+          `Failed to find invitations: ${dbError.message}`,
+        );
+      }
     } catch (error) {
+      // Rethrow known error types
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      // Log unexpected errors
       this.logger.error(
-        `Failed to find invitations: ${error.message}`,
+        `Unexpected error during invitation retrieval: ${error.message}`,
         error.stack,
       );
+
       throw new InternalServerErrorException(
-        `Failed to find invitations: ${error.message}`,
+        'Failed to retrieve invitations: An unexpected error occurred',
       );
     }
   }
@@ -58,28 +96,64 @@ export class InvitationsService {
    */
   async findOne(invitation_id: string) {
     try {
-      const invitation = await this.prisma.invitations.findUnique({
-        where: { invitation_id },
-      });
-
-      if (!invitation) {
-        throw new NotFoundException(
-          `Invitation with ID ${invitation_id} not found`,
-        );
+      // Validate input
+      if (!invitation_id) {
+        throw new BadRequestException('Invitation ID is required');
       }
 
-      return invitation;
+      // Validate UUID format
+      if (!this.isValidUUID(invitation_id)) {
+        throw new BadRequestException('Invalid invitation ID format');
+      }
+
+      // Attempt to find the invitation
+      try {
+        const invitation = await this.prisma.invitations.findUnique({
+          where: { invitation_id },
+        });
+
+        if (!invitation) {
+          throw new NotFoundException(
+            `Invitation with ID ${invitation_id} not found`,
+          );
+        }
+
+        return invitation;
+      } catch (dbError) {
+        // Log detailed database error
+        this.logger.error(
+          `Database error when finding invitation: ${dbError.message}`,
+          dbError.stack,
+        );
+
+        // Check for specific Prisma error codes
+        if (dbError.code === 'P1001') {
+          throw new InternalServerErrorException(
+            'Unable to connect to the database',
+          );
+        }
+
+        throw new InternalServerErrorException(
+          `Failed to find invitation: ${dbError.message}`,
+        );
+      }
     } catch (error) {
-      if (error instanceof NotFoundException) {
+      // Rethrow known error types
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
         throw error;
       }
 
+      // Log unexpected errors
       this.logger.error(
-        `Failed to find invitation: ${error.message}`,
+        `Unexpected error during invitation retrieval: ${error.message}`,
         error.stack,
       );
+
       throw new InternalServerErrorException(
-        `Failed to find invitation: ${error.message}`,
+        'Failed to retrieve invitation: An unexpected error occurred',
       );
     }
   }
@@ -356,8 +430,37 @@ export class InvitationsService {
    */
   async resendInvitation(invitation_id: string) {
     try {
-      const invitation = await this.findOne(invitation_id);
+      // Validate input
+      if (!invitation_id) {
+        throw new BadRequestException('Invitation ID is required');
+      }
 
+      // Validate UUID format
+      if (!this.isValidUUID(invitation_id)) {
+        throw new BadRequestException('Invalid invitation ID format');
+      }
+
+      // Attempt to find the invitation
+      let invitation;
+      try {
+        invitation = await this.findOne(invitation_id);
+      } catch (findError) {
+        // Distinguish between different types of not found errors
+        if (findError instanceof NotFoundException) {
+          throw findError;
+        }
+
+        // Handle potential database connection or network errors
+        this.logger.error(
+          `Database error when finding invitation: ${findError.message}`,
+          findError.stack,
+        );
+        throw new InternalServerErrorException(
+          'Unable to retrieve invitation due to a system error',
+        );
+      }
+
+      // Check invitation status
       if (invitation.status !== InvitationStatus.PENDING) {
         throw new BadRequestException(
           `Invitation is ${invitation.status.toLowerCase()}, cannot be resent`,
@@ -368,10 +471,32 @@ export class InvitationsService {
       const token = randomUUID();
       const expires_at = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
-      const updatedInvitation = await this.prisma.invitations.update({
-        where: { invitation_id },
-        data: { token, expires_at },
-      });
+      // Attempt to update invitation
+      let updatedInvitation;
+      try {
+        updatedInvitation = await this.prisma.invitations.update({
+          where: { invitation_id },
+          data: { token, expires_at },
+        });
+      } catch (updateError) {
+        // Log detailed error information
+        this.logger.error(
+          `Failed to update invitation: ${updateError.message}`,
+          updateError.stack,
+        );
+
+        // Check for specific error types
+        if (updateError.code === 'P2002') {
+          throw new InternalServerErrorException(
+            'Unique constraint violation during invitation resend',
+          );
+        }
+
+        // Generic database update error
+        throw new InternalServerErrorException(
+          `Unable to resend invitation: ${updateError.message}`,
+        );
+      }
 
       return {
         success: true,
@@ -379,6 +504,7 @@ export class InvitationsService {
         invitation: updatedInvitation,
       };
     } catch (error) {
+      // Rethrow known error types
       if (
         error instanceof NotFoundException ||
         error instanceof BadRequestException
@@ -386,12 +512,15 @@ export class InvitationsService {
         throw error;
       }
 
+      // Log unexpected errors
       this.logger.error(
-        `Failed to resend invitation: ${error.message}`,
+        `Unexpected error during invitation resend: ${error.message}`,
         error.stack,
       );
+
+      // Provide a generic error response for unexpected errors
       throw new InternalServerErrorException(
-        `Failed to resend invitation: ${error.message}`,
+        `Failed to resend invitation: An unexpected error occurred`,
       );
     }
   }
@@ -509,27 +638,82 @@ export class InvitationsService {
    */
   async remove(invitation_id: string) {
     try {
-      await this.findOne(invitation_id);
+      // Validate input
+      if (!invitation_id) {
+        throw new BadRequestException('Invitation ID is required');
+      }
 
-      await this.prisma.invitations.delete({
-        where: { invitation_id },
-      });
+      // Validate UUID format
+      if (!this.isValidUUID(invitation_id)) {
+        throw new BadRequestException('Invalid invitation ID format');
+      }
+
+      // Attempt to find the invitation first
+      try {
+        await this.findOne(invitation_id);
+      } catch (findError) {
+        // Rethrow if it's a not found error
+        if (findError instanceof NotFoundException) {
+          throw findError;
+        }
+
+        // Handle potential database connection or network errors
+        this.logger.error(
+          `Database error when finding invitation: ${findError.message}`,
+          findError.stack,
+        );
+        throw new InternalServerErrorException(
+          'Unable to retrieve invitation due to a system error',
+        );
+      }
+
+      // Attempt to delete the invitation
+      try {
+        await this.prisma.invitations.delete({
+          where: { invitation_id },
+        });
+      } catch (deleteError) {
+        // Log detailed error information
+        this.logger.error(
+          `Failed to remove invitation: ${deleteError.message}`,
+          deleteError.stack,
+        );
+
+        // Check for specific error types
+        if (deleteError.code === 'P2025') {
+          throw new NotFoundException(
+            `Invitation with ID ${invitation_id} not found or already deleted`,
+          );
+        }
+
+        // Generic database delete error
+        throw new InternalServerErrorException(
+          `Unable to remove invitation: ${deleteError.message}`,
+        );
+      }
 
       return {
         success: true,
         message: `Invitation with ID ${invitation_id} has been removed`,
       };
     } catch (error) {
-      if (error instanceof NotFoundException) {
+      // Rethrow known error types
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
         throw error;
       }
 
+      // Log unexpected errors
       this.logger.error(
-        `Failed to remove invitation: ${error.message}`,
+        `Unexpected error during invitation removal: ${error.message}`,
         error.stack,
       );
+
+      // Provide a generic error response for unexpected errors
       throw new InternalServerErrorException(
-        `Failed to remove invitation: ${error.message}`,
+        `Failed to remove invitation: An unexpected error occurred`,
       );
     }
   }
