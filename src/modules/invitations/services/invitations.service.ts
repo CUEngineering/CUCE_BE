@@ -3,24 +3,19 @@ import {
   NotFoundException,
   BadRequestException,
   InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AcceptInvitationDto } from '../dto/accept-invitation.dto';
 import { randomUUID } from 'crypto';
-
-// Define custom Invitation type based on Prisma schema
-export type Invitation = {
-  invitation_id: string;
-  email: string;
-  token: string;
-  expires_at: Date;
-  status: string;
-  user_type: string;
-  student_id?: string | null;
-  registrar_id?: string | null;
-  created_at: Date;
-  updated_at: Date;
-};
+import { SupabaseService } from '../../../supabase/supabase.service';
+import {
+  Invitation,
+  AcceptanceState,
+  AcceptanceResult,
+  StepState,
+} from '../types/invitation.types';
+import { Prisma } from '@prisma/client';
 
 /**
  * Type guard to check if a value is an Error
@@ -61,15 +56,248 @@ function safeUuidv4(): string {
 
 @Injectable()
 export class InvitationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(InvitationsService.name);
 
-  async findAll(status?: string): Promise<Invitation[]> {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly supabaseService: SupabaseService,
+  ) {}
+
+  private initializeAcceptanceState(): AcceptanceState {
+    return {
+      steps: {
+        tokenValidation: { success: false },
+        userCreation: { success: false },
+        roleAssignment: { success: false },
+        profileCreation: { success: false },
+        invitationUpdate: { success: false },
+      },
+      currentStep: 'tokenValidation',
+      rollbackNeeded: false,
+      rollbackSteps: [],
+    };
+  }
+
+  private async validateInvitationToken(token: string): Promise<{
+    state: StepState;
+    invitation?: Invitation;
+  }> {
+    const invitation = await this.prisma.invitation.findFirst({
+      where: { token },
+    });
+
+    if (!invitation) {
+      return {
+        state: {
+          success: false,
+          error: 'Invalid invitation token',
+        },
+      };
+    }
+
+    if (invitation.status !== 'PENDING') {
+      return {
+        state: {
+          success: false,
+          error: `Invitation is ${invitation.status.toLowerCase()}`,
+        },
+        invitation,
+      };
+    }
+
+    if (invitation.expires_at < new Date()) {
+      await this.prisma.invitation.update({
+        where: { invitation_id: invitation.invitation_id },
+        data: { status: 'EXPIRED' },
+      });
+
+      return {
+        state: {
+          success: false,
+          error: 'Invitation has expired',
+        },
+        invitation: { ...invitation, status: 'EXPIRED' },
+      };
+    }
+
+    return {
+      state: {
+        success: true,
+        data: invitation,
+      },
+      invitation,
+    };
+  }
+
+  private async createUser(
+    email: string,
+    password: string,
+  ): Promise<{
+    state: StepState;
+    user?: any;
+    session?: any;
+  }> {
     try {
-      const where: Record<string, any> = {};
+      const { user, session } = await this.supabaseService.signUp(
+        email,
+        password,
+      );
 
-      if (status) {
-        where.status = status.toUpperCase();
+      if (!user || !session) {
+        return {
+          state: {
+            success: false,
+            error: 'Failed to create user account',
+          },
+        };
       }
+
+      return {
+        state: {
+          success: true,
+          data: { user, session },
+        },
+        user,
+        session,
+      };
+    } catch (error) {
+      return {
+        state: {
+          success: false,
+          error:
+            error instanceof Error ? error.message : 'Failed to create user',
+        },
+      };
+    }
+  }
+
+  private async assignRole(
+    client: any,
+    userId: string,
+    role: string,
+  ): Promise<StepState> {
+    try {
+      const { error: roleError } = await client.from('user_roles').insert({
+        user_id: userId,
+        role,
+      });
+
+      if (roleError) {
+        // Try with admin client if RLS blocks it
+        const adminClient = this.supabaseService.getAdminClient();
+        const { error: adminRoleError } = await adminClient
+          .from('user_roles')
+          .insert({
+            user_id: userId,
+            role,
+          });
+
+        if (adminRoleError) {
+          return {
+            success: false,
+            error: adminRoleError.message,
+          };
+        }
+      }
+
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to assign role',
+      };
+    }
+  }
+
+  private async createRegistrarProfile(
+    client: any,
+    userId: string,
+    email: string,
+    firstName: string,
+    lastName: string,
+  ): Promise<{
+    state: StepState;
+    registrar?: any;
+  }> {
+    try {
+      const registrar_id = randomUUID();
+      const { data: registrar, error: registrarError } = await client
+        .from('registrars')
+        .insert({
+          registrar_id,
+          email,
+          first_name: firstName,
+          last_name: lastName,
+          user_id: userId,
+        })
+        .select()
+        .single();
+
+      if (registrarError || !registrar) {
+        return {
+          state: {
+            success: false,
+            error:
+              registrarError?.message || 'Failed to create registrar profile',
+          },
+        };
+      }
+
+      return {
+        state: {
+          success: true,
+          data: registrar,
+        },
+        registrar,
+      };
+    } catch (error) {
+      return {
+        state: {
+          success: false,
+          error:
+            error instanceof Error ? error.message : 'Failed to create profile',
+        },
+      };
+    }
+  }
+
+  private async updateInvitationStatus(
+    client: any,
+    invitationId: string,
+    email: string,
+  ): Promise<StepState> {
+    try {
+      const { error } = await client
+        .from('invitations')
+        .update({ status: 'ACCEPTED' })
+        .eq('invitation_id', invitationId)
+        .eq('email', email);
+
+      if (error) {
+        return {
+          success: false,
+          error: error.message,
+        };
+      }
+
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Failed to update invitation',
+      };
+    }
+  }
+
+  /**
+   * Find all invitations with optional status filter
+   */
+  async findAll(status?: string) {
+    try {
+      const where = status ? { status: status.toUpperCase() } : {};
 
       return await this.prisma.invitation.findMany({
         where,
@@ -78,18 +306,20 @@ export class InvitationsService {
         },
       });
     } catch (error) {
-      if (error instanceof Error) {
-        throw new InternalServerErrorException(
-          `Failed to find invitations: ${error.message}`,
-        );
-      }
+      this.logger.error(
+        `Failed to find invitations: ${error.message}`,
+        error.stack,
+      );
       throw new InternalServerErrorException(
-        'An unknown error occurred while finding invitations',
+        `Failed to find invitations: ${error.message}`,
       );
     }
   }
 
-  async findOne(invitation_id: string): Promise<Invitation> {
+  /**
+   * Find a single invitation by ID
+   */
+  async findOne(invitation_id: string) {
     try {
       const invitation = await this.prisma.invitation.findUnique({
         where: { invitation_id },
@@ -107,205 +337,19 @@ export class InvitationsService {
         throw error;
       }
 
-      if (error instanceof Error) {
-        throw new InternalServerErrorException(
-          `Failed to find invitation: ${error.message}`,
-        );
-      }
+      this.logger.error(
+        `Failed to find invitation: ${error.message}`,
+        error.stack,
+      );
       throw new InternalServerErrorException(
-        'An unknown error occurred while finding invitation',
+        `Failed to find invitation: ${error.message}`,
       );
     }
   }
 
-  async acceptInvitation(
-    invitation_id: string,
-    dto: AcceptInvitationDto,
-  ): Promise<{ success: boolean; message: string }> {
-    try {
-      const invitation = await this.findOne(invitation_id);
-
-      if (invitation.status !== 'PENDING') {
-        throw new BadRequestException(
-          `Invitation is ${invitation.status.toLowerCase()}, cannot be accepted`,
-        );
-      }
-
-      // Update invitation status
-      await this.prisma.invitation.update({
-        where: { invitation_id },
-        data: {
-          status: 'ACCEPTED',
-        },
-      });
-
-      // If this is a registrar invitation, create the registrar record
-      if (invitation.user_type === 'REGISTRAR') {
-        const registrar_id = safeUuidv4();
-
-        // Validate DTO has required properties
-        if (!hasRequiredDtoProperties(dto)) {
-          throw new BadRequestException(
-            'Missing required fields in invitation acceptance',
-          );
-        }
-
-        await this.prisma.registrar.create({
-          data: {
-            registrar_id,
-            email: invitation.email,
-            first_name: dto.firstName,
-            last_name: dto.lastName,
-            // We would normally set user_id here to link to auth system
-          },
-        });
-
-        return {
-          success: true,
-          message: 'Registrar account created successfully',
-        };
-      }
-
-      // Handle other user types as needed
-
-      return {
-        success: true,
-        message: 'Invitation accepted successfully',
-      };
-    } catch (error) {
-      if (
-        error instanceof NotFoundException ||
-        error instanceof BadRequestException
-      ) {
-        throw error;
-      }
-
-      if (isError(error)) {
-        throw new InternalServerErrorException(
-          `Failed to accept invitation: ${error.message}`,
-        );
-      }
-      throw new InternalServerErrorException(
-        'An unknown error occurred while accepting invitation',
-      );
-    }
-  }
-
-  async resendInvitation(invitation_id: string) {
-    try {
-      const invitation = await this.findOne(invitation_id);
-
-      if (invitation.status !== 'PENDING') {
-        throw new BadRequestException(
-          `Invitation is ${invitation.status.toLowerCase()}, cannot be resent`,
-        );
-      }
-
-      // Generate new token
-      const token = safeUuidv4();
-
-      // Update invitation with new token and expiration date
-      const updatedInvitation = await this.prisma.invitation.update({
-        where: { invitation_id },
-        data: {
-          token,
-          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-        },
-      });
-
-      return {
-        success: true,
-        message: `Invitation resent to ${invitation.email}`,
-        invitation: updatedInvitation,
-      };
-    } catch (error) {
-      if (
-        error instanceof NotFoundException ||
-        error instanceof BadRequestException
-      ) {
-        throw error;
-      }
-
-      if (error instanceof Error) {
-        throw new InternalServerErrorException(
-          `Failed to resend invitation: ${error.message}`,
-        );
-      }
-      throw new InternalServerErrorException(
-        'An unknown error occurred while resending invitation',
-      );
-    }
-  }
-
-  async cancelInvitation(invitation_id: string) {
-    try {
-      const invitation = await this.findOne(invitation_id);
-
-      if (invitation.status !== 'PENDING') {
-        throw new BadRequestException(
-          `Invitation is ${invitation.status.toLowerCase()}, cannot be cancelled`,
-        );
-      }
-
-      const updatedInvitation = await this.prisma.invitation.update({
-        where: { invitation_id },
-        data: {
-          status: 'CANCELLED',
-        },
-      });
-
-      return {
-        success: true,
-        message: `Invitation to ${invitation.email} has been cancelled`,
-        invitation: updatedInvitation,
-      };
-    } catch (error) {
-      if (
-        error instanceof NotFoundException ||
-        error instanceof BadRequestException
-      ) {
-        throw error;
-      }
-
-      if (error instanceof Error) {
-        throw new InternalServerErrorException(
-          `Failed to cancel invitation: ${error.message}`,
-        );
-      }
-      throw new InternalServerErrorException(
-        'An unknown error occurred while cancelling invitation',
-      );
-    }
-  }
-
-  async remove(invitation_id: string) {
-    try {
-      await this.findOne(invitation_id);
-
-      await this.prisma.invitation.delete({
-        where: { invitation_id },
-      });
-
-      return {
-        success: true,
-        message: `Invitation with ID ${invitation_id} has been removed`,
-      };
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-
-      if (error instanceof Error) {
-        throw new InternalServerErrorException(
-          `Failed to remove invitation: ${error.message}`,
-        );
-      }
-      throw new InternalServerErrorException(
-        'An unknown error occurred while removing invitation',
-      );
-    }
-  }
-
+  /**
+   * Validate invitation token
+   */
   async validateToken(token: string) {
     try {
       const invitation = await this.prisma.invitation.findFirst({
@@ -349,13 +393,283 @@ export class InvitationsService {
         invitation,
       };
     } catch (error) {
-      if (error instanceof Error) {
+      this.logger.error(
+        `Failed to validate token: ${error.message}`,
+        error.stack,
+      );
+      throw new InternalServerErrorException(
+        `Failed to validate token: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Accept an invitation with cleaner error handling
+   */
+  async acceptInvitation(token: string, dto: AcceptInvitationDto) {
+    try {
+      // Step 1: Validate the invitation token
+      const validation = await this.validateToken(token);
+
+      if (!validation.valid || !validation.invitation) {
+        throw new BadRequestException(validation.message);
+      }
+
+      const invitation = validation.invitation;
+
+      // Step 2: Create the user account
+      const { user, session } = await this.supabaseService.signUp(
+        invitation.email,
+        dto.password,
+      );
+
+      if (!user || !session) {
+        throw new InternalServerErrorException('Failed to create user account');
+      }
+
+      // Create a client with the new user's token
+      const client = this.supabaseService.getClientWithAuth(
+        session.access_token,
+      );
+
+      try {
+        // Step 3: Try to insert the user role
+        const { error: roleError } = await client.from('user_roles').insert({
+          user_id: user.id,
+          role: invitation.user_type,
+        });
+
+        if (roleError) {
+          this.logger.warn(
+            `Role creation failed via user client: ${roleError.message}`,
+          );
+
+          // If that fails, we need to clean up and inform the user
+          await this.supabaseService.deleteUser(user.id);
+          throw new InternalServerErrorException(
+            `Role creation failed: ${roleError.message}`,
+          );
+        }
+      } catch (error) {
+        // If role assignment fails, clean up the user
+        await this.supabaseService.deleteUser(user.id);
         throw new InternalServerErrorException(
-          `Failed to validate token: ${error.message}`,
+          `Role assignment failed: ${error.message}`,
         );
       }
+
+      // Step 4: Create the appropriate profile based on user type
+      try {
+        if (invitation.user_type === 'REGISTRAR') {
+          // Create registrar profile
+          const { data: registrar, error: registrarError } = await client
+            .from('registrars')
+            .insert({
+              registrar_id: randomUUID(),
+              email: user.email,
+              first_name: dto.firstName,
+              last_name: dto.lastName,
+              user_id: user.id,
+            })
+            .select()
+            .single();
+
+          if (registrarError || !registrar) {
+            throw new Error(
+              registrarError?.message || 'Failed to create registrar profile',
+            );
+          }
+
+          // Step 5: Update the invitation status
+          await this.updateInvitationStatus(
+            invitation.invitation_id,
+            'ACCEPTED',
+          );
+
+          // Return the complete response
+          return {
+            user: {
+              id: user.id,
+              email: user.email,
+              first_name: dto.firstName,
+              last_name: dto.lastName,
+              role: invitation.user_type,
+            },
+            session: {
+              access_token: session.access_token,
+              refresh_token: session.refresh_token,
+            },
+            registrar,
+          };
+        } else if (invitation.user_type === 'STUDENT') {
+          // Handle student creation (implementation left out for brevity)
+          throw new BadRequestException(
+            'Student registration not implemented yet',
+          );
+        } else {
+          throw new BadRequestException(
+            `Unsupported user type: ${invitation.user_type}`,
+          );
+        }
+      } catch (error) {
+        // If profile creation fails, clean up the user
+        await this.supabaseService.deleteUser(user.id);
+        throw new InternalServerErrorException(
+          `Profile creation failed: ${error.message}`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `Invitation acceptance failed: ${error.message}`,
+        error.stack,
+      );
+
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException ||
+        error instanceof InternalServerErrorException
+      ) {
+        throw error;
+      }
+
       throw new InternalServerErrorException(
-        'An unknown error occurred while validating token',
+        `Failed to accept invitation: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Resend an invitation with a new token and expiration date
+   */
+  async resendInvitation(invitation_id: string) {
+    try {
+      const invitation = await this.findOne(invitation_id);
+
+      if (invitation.status !== 'PENDING') {
+        throw new BadRequestException(
+          `Invitation is ${invitation.status.toLowerCase()}, cannot be resent`,
+        );
+      }
+
+      // Generate new token and update expiry
+      const token = randomUUID();
+      const expires_at = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+      const updatedInvitation = await this.prisma.invitation.update({
+        where: { invitation_id },
+        data: { token, expires_at },
+      });
+
+      return {
+        success: true,
+        message: `Invitation resent to ${invitation.email}`,
+        invitation: updatedInvitation,
+      };
+    } catch (error) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+
+      this.logger.error(
+        `Failed to resend invitation: ${error.message}`,
+        error.stack,
+      );
+      throw new InternalServerErrorException(
+        `Failed to resend invitation: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Cancel an invitation
+   */
+  async cancelInvitation(invitation_id: string) {
+    try {
+      const invitation = await this.findOne(invitation_id);
+
+      if (invitation.status !== 'PENDING') {
+        throw new BadRequestException(
+          `Invitation is ${invitation.status.toLowerCase()}, cannot be cancelled`,
+        );
+      }
+
+      const updatedInvitation = await this.updateInvitationStatus(
+        invitation_id,
+        'CANCELLED',
+      );
+
+      return {
+        success: true,
+        message: `Invitation to ${invitation.email} has been cancelled`,
+        invitation: updatedInvitation,
+      };
+    } catch (error) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+
+      this.logger.error(
+        `Failed to cancel invitation: ${error.message}`,
+        error.stack,
+      );
+      throw new InternalServerErrorException(
+        `Failed to cancel invitation: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Remove an invitation
+   */
+  async remove(invitation_id: string) {
+    try {
+      await this.findOne(invitation_id);
+
+      await this.prisma.invitation.delete({
+        where: { invitation_id },
+      });
+
+      return {
+        success: true,
+        message: `Invitation with ID ${invitation_id} has been removed`,
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+
+      this.logger.error(
+        `Failed to remove invitation: ${error.message}`,
+        error.stack,
+      );
+      throw new InternalServerErrorException(
+        `Failed to remove invitation: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Helper method to update invitation status
+   */
+  private async updateInvitationStatus(invitation_id: string, status: string) {
+    try {
+      return await this.prisma.invitation.update({
+        where: { invitation_id },
+        data: { status },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to update invitation status: ${error.message}`,
+        error.stack,
+      );
+      throw new InternalServerErrorException(
+        `Failed to update invitation status: ${error.message}`,
       );
     }
   }
