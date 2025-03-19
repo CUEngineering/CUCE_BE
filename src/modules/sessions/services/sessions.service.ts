@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { EnrollmentsService } from '../../enrollments/services/enrollments.service';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class SessionsService {
@@ -99,6 +100,7 @@ export class SessionsService {
       // Create the session with UPCOMING status
       const session = await this.prisma.session.create({
         data: {
+          session_id: randomUUID(),
           ...sessionData,
           session_status: 'UPCOMING',
         },

@@ -57,12 +57,55 @@ export class PrismaService
     }
   }
 
-   
   async cleanDatabase(): Promise<void> {
     if (this.configService.get<string>('NODE_ENV') === 'test') {
       // Add logic to truncate all tables for testing purposes
       // This should only run in test environment
       // For now, this is just a placeholder
     }
+  }
+
+  /**
+   * Compatibility getters for singular model names
+   * These map to the plural names defined in the Prisma schema
+   */
+  get invitation() {
+    // @ts-ignore - we're using the undocumented _baseDmmf to access the raw schema
+    return this.invitations;
+  }
+
+  get enrollment() {
+    // @ts-ignore
+    return this.enrollments;
+  }
+
+  get session() {
+    // @ts-ignore
+    return this.public_sessions;
+  }
+
+  get sessionCourse() {
+    // @ts-ignore
+    return this.session_courses;
+  }
+
+  get program() {
+    // @ts-ignore
+    return this.programs;
+  }
+
+  get programCourse() {
+    // @ts-ignore
+    return this.program_courses;
+  }
+
+  get registrar() {
+    // @ts-ignore
+    return this.registrars;
+  }
+
+  get student() {
+    // @ts-ignore
+    return this.students;
   }
 }

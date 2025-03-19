@@ -304,4 +304,67 @@ export class SupabaseService {
       throw new InternalServerErrorException('Failed to delete user');
     }
   }
+
+  /**
+   * Insert a record using admin privileges (bypassing RLS)
+   */
+  async adminInsert(table: string, data: Record<string, any>) {
+    try {
+      const { data: result, error } = await this.adminClient
+        .from(table)
+        .insert(data)
+        .select();
+
+      if (error) {
+        throw new InternalServerErrorException(
+          `Admin insert failed: ${error.message}`,
+        );
+      }
+
+      return { data: result, error: null };
+    } catch (error) {
+      if (error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      return {
+        data: null,
+        error: {
+          message:
+            error instanceof Error ? error.message : 'Admin insert failed',
+        },
+      };
+    }
+  }
+
+  /**
+   * Insert a single record and return it using admin privileges (bypassing RLS)
+   */
+  async adminInsertSingle(table: string, data: Record<string, any>) {
+    try {
+      const { data: result, error } = await this.adminClient
+        .from(table)
+        .insert(data)
+        .select()
+        .single();
+
+      if (error) {
+        throw new InternalServerErrorException(
+          `Admin insert failed: ${error.message}`,
+        );
+      }
+
+      return { data: result, error: null };
+    } catch (error) {
+      if (error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      return {
+        data: null,
+        error: {
+          message:
+            error instanceof Error ? error.message : 'Admin insert failed',
+        },
+      };
+    }
+  }
 }

@@ -7,7 +7,6 @@ import {
 import { SupabaseService } from '../../../supabase/supabase.service';
 import { CreateRegistrarDto } from '../dto/create-registrar.dto';
 import { UpdateRegistrarDto } from '../dto/update-registrar.dto';
-import { InviteRegistrarDto } from '../dto/invite-registrar.dto';
 import {
   Invitation,
   InvitationResponse,
@@ -26,6 +25,10 @@ function safeUuidv4(): string {
   } catch {
     return `fallback-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
   }
+}
+
+interface EmailDto {
+  email: string;
 }
 
 @Injectable()
@@ -103,7 +106,7 @@ export class RegistrarsService {
   }
 
   async inviteRegistrar(
-    inviteDto: InviteRegistrarDto,
+    inviteDto: EmailDto,
     accessToken: string,
   ): Promise<InvitationResponse> {
     const { email } = inviteDto;
@@ -148,44 +151,6 @@ export class RegistrarsService {
       success: true,
       message: `Invitation sent to ${email}`,
       invitation: invitation[0],
-    };
-  }
-
-  async cancelInvitation(
-    invitation_id: string,
-    accessToken: string,
-  ): Promise<InvitationResponse> {
-    // Check if invitation exists and is pending
-    const invitation = (await this.supabaseService.select(
-      accessToken,
-      'invitations',
-      { filter: { invitation_id } },
-    )) as unknown as Invitation[];
-
-    if (!invitation || invitation.length === 0) {
-      throw new NotFoundException(
-        `Invitation with ID ${invitation_id} not found`,
-      );
-    }
-
-    if (invitation[0].status !== 'PENDING') {
-      throw new BadRequestException(
-        `Invitation is ${invitation[0].status.toLowerCase()}, cannot be cancelled`,
-      );
-    }
-
-    // Update invitation status
-    const updatedInvitation = (await this.supabaseService.update(
-      accessToken,
-      'invitations',
-      { invitation_id },
-      { status: 'CANCELLED' },
-    )) as unknown as Invitation[];
-
-    return {
-      success: true,
-      message: 'Invitation cancelled successfully',
-      invitation: updatedInvitation[0],
     };
   }
 

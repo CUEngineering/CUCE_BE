@@ -1,19 +1,8 @@
-import { IsEmail, IsArray, ValidateNested } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsEmail, IsArray, ArrayMinSize } from 'class-validator';
 
-export class EmailDto {
-  @IsEmail()
-  email: string;
-}
-
-export class InviteRegistrarDto {
-  @IsEmail()
-  email: string;
-}
-
-export class InviteMultipleRegistrarsDto {
+export class InviteRegistrarsDto {
   @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => EmailDto)
-  emails: EmailDto[];
+  @ArrayMinSize(1)
+  @IsEmail({}, { each: true })
+  emails: string[];
 }

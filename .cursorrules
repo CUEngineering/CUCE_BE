@@ -6,3 +6,7 @@
 - Look beyond immediate code-level symptoms
 - Systematically analyze architectural components
 - Ask clarifying questions about system design where necessary
+- Always Check the existing code and types before making changes. This is very important. Do it every time.
+- Always ensure all layers (controller, service, DTOs) are in sync
+- Always clean up unused code
+- Always verify the changes are reflected in documentation/tests

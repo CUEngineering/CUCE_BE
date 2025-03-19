@@ -9,11 +9,52 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { AcceptInvitationDto } from '../dto/accept-invitation.dto';
 import { randomUUID } from 'crypto';
 import { SupabaseService } from '../../../supabase/supabase.service';
+import {
+  Invitation,
+  AcceptanceState,
+  AcceptanceResult,
+  StepState,
+} from '../types/invitation.types';
+import { Prisma } from '@prisma/client';
 import { InvitationStatus } from '@prisma/client';
 
 /**
- * Clean, simplified invitation service
+ * Type guard to check if a value is an Error
  */
+function isError(error: unknown): error is Error {
+  return error instanceof Error;
+}
+
+/**
+ * Type guard to verify AcceptInvitationDto properties
+ */
+function hasRequiredDtoProperties(
+  dto: AcceptInvitationDto,
+): dto is AcceptInvitationDto & {
+  firstName: string;
+  lastName: string;
+  password: string;
+} {
+  return (
+    typeof dto.firstName === 'string' &&
+    typeof dto.lastName === 'string' &&
+    typeof dto.password === 'string'
+  );
+}
+
+/**
+ * Function to safely generate a UUID
+ */
+function safeUuidv4(): string {
+  try {
+    // Use Node.js built-in crypto module which has proper typing
+    return randomUUID();
+  } catch {
+    // Fallback mechanism
+    return `fallback-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+  }
+}
+
 @Injectable()
 export class InvitationsService {
   private readonly logger = new Logger(InvitationsService.name);
@@ -22,6 +63,235 @@ export class InvitationsService {
     private readonly prisma: PrismaService,
     private readonly supabaseService: SupabaseService,
   ) {}
+
+  private initializeAcceptanceState(): AcceptanceState {
+    return {
+      steps: {
+        tokenValidation: { success: false },
+        userCreation: { success: false },
+        roleAssignment: { success: false },
+        profileCreation: { success: false },
+        invitationUpdate: { success: false },
+      },
+      currentStep: 'tokenValidation',
+      rollbackNeeded: false,
+      rollbackSteps: [],
+    };
+  }
+
+  private async validateInvitationToken(token: string): Promise<{
+    state: StepState;
+    invitation?: Invitation;
+  }> {
+    const invitation = await this.prisma.invitation.findFirst({
+      where: { token },
+    });
+
+    if (!invitation) {
+      return {
+        state: {
+          success: false,
+          error: 'Invalid invitation token',
+        },
+      };
+    }
+
+    if (invitation.status !== 'PENDING') {
+      return {
+        state: {
+          success: false,
+          error: `Invitation is ${invitation.status.toLowerCase()}`,
+        },
+        invitation,
+      };
+    }
+
+    if (invitation.expires_at < new Date()) {
+      await this.prisma.invitation.update({
+        where: { invitation_id: invitation.invitation_id },
+        data: { status: 'EXPIRED' },
+      });
+
+      return {
+        state: {
+          success: false,
+          error: 'Invitation has expired',
+        },
+        invitation: { ...invitation, status: 'EXPIRED' },
+      };
+    }
+
+    return {
+      state: {
+        success: true,
+        data: invitation,
+      },
+      invitation,
+    };
+  }
+
+  private async createUser(
+    email: string,
+    password: string,
+  ): Promise<{
+    state: StepState;
+    user?: any;
+    session?: any;
+  }> {
+    try {
+      const { user, session } = await this.supabaseService.signUp(
+        email,
+        password,
+      );
+
+      if (!user || !session) {
+        return {
+          state: {
+            success: false,
+            error: 'Failed to create user account',
+          },
+        };
+      }
+
+      return {
+        state: {
+          success: true,
+          data: { user, session },
+        },
+        user,
+        session,
+      };
+    } catch (error) {
+      return {
+        state: {
+          success: false,
+          error:
+            error instanceof Error ? error.message : 'Failed to create user',
+        },
+      };
+    }
+  }
+
+  private async assignRole(
+    client: any,
+    userId: string,
+    role: string,
+  ): Promise<StepState> {
+    try {
+      const { error: roleError } = await client.from('user_roles').insert({
+        user_id: userId,
+        role,
+      });
+
+      if (roleError) {
+        // Try with admin client if RLS blocks it
+        const adminClient = this.supabaseService.getAdminClient();
+        const { error: adminRoleError } = await adminClient
+          .from('user_roles')
+          .insert({
+            user_id: userId,
+            role,
+          });
+
+        if (adminRoleError) {
+          return {
+            success: false,
+            error: adminRoleError.message,
+          };
+        }
+      }
+
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to assign role',
+      };
+    }
+  }
+
+  private async createRegistrarProfile(
+    client: any,
+    userId: string,
+    email: string,
+    firstName: string,
+    lastName: string,
+  ): Promise<{
+    state: StepState;
+    registrar?: any;
+  }> {
+    try {
+      const registrar_id = randomUUID();
+      const { data: registrar, error: registrarError } = await client
+        .from('registrars')
+        .insert({
+          registrar_id,
+          email,
+          first_name: firstName,
+          last_name: lastName,
+          user_id: userId,
+        })
+        .select()
+        .single();
+
+      if (registrarError || !registrar) {
+        return {
+          state: {
+            success: false,
+            error:
+              registrarError?.message || 'Failed to create registrar profile',
+          },
+        };
+      }
+
+      return {
+        state: {
+          success: true,
+          data: registrar,
+        },
+        registrar,
+      };
+    } catch (error) {
+      return {
+        state: {
+          success: false,
+          error:
+            error instanceof Error ? error.message : 'Failed to create profile',
+        },
+      };
+    }
+  }
+
+  private async updateInvitationStatus(
+    client: any,
+    invitationId: string,
+    email: string,
+  ): Promise<StepState> {
+    try {
+      const { error } = await client
+        .from('invitations')
+        .update({ status: 'ACCEPTED' })
+        .eq('invitation_id', invitationId)
+        .eq('email', email);
+
+      if (error) {
+        return {
+          success: false,
+          error: error.message,
+        };
+      }
+
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Failed to update invitation',
+      };
+    }
+  }
 
   /**
    * Find all invitations with optional status filter
@@ -141,29 +411,6 @@ export class InvitationsService {
   }
 
   /**
-   * Helper method to update invitation status
-   */
-  private async updateInvitationStatus(
-    invitation_id: string,
-    status: InvitationStatus,
-  ) {
-    try {
-      return await this.prisma.invitation.update({
-        where: { invitation_id },
-        data: { status },
-      });
-    } catch (error) {
-      this.logger.error(
-        `Failed to update invitation status: ${error.message}`,
-        error.stack,
-      );
-      throw new InternalServerErrorException(
-        `Failed to update invitation status: ${error.message}`,
-      );
-    }
-  }
-
-  /**
    * Accept an invitation with cleaner error handling
    */
   async acceptInvitation(token: string, dto: AcceptInvitationDto) {
@@ -200,24 +447,13 @@ export class InvitationsService {
         });
 
         if (roleError) {
-          this.logger.warn(
-            `Role creation failed with client token: ${roleError.message}`,
+          this.logger.warn(`Role creation failed: ${roleError.message}`);
+
+          // Clean up the user if role creation fails
+          await this.supabaseService.deleteUser(user.id);
+          throw new InternalServerErrorException(
+            `Role creation failed: ${roleError.message}`,
           );
-
-          // Try with admin client if RLS blocks it
-          const { error: adminRoleError } =
-            await this.supabaseService.adminInsert('user_roles', {
-              user_id: user.id,
-              role: invitation.user_type,
-            });
-
-          if (adminRoleError) {
-            // Clean up the user if role creation fails
-            await this.supabaseService.deleteUser(user.id);
-            throw new InternalServerErrorException(
-              `Role creation failed: ${adminRoleError.message}`,
-            );
-          }
         }
       } catch (error) {
         // If role assignment fails, clean up the user
@@ -243,54 +479,10 @@ export class InvitationsService {
             .select()
             .single();
 
-          if (registrarError) {
-            // Try with admin client if needed
-            const { data: adminRegistrar, error: adminRegistrarError } =
-              await this.supabaseService.adminInsertSingle('registrars', {
-                registrar_id: randomUUID(),
-                email: user.email,
-                first_name: dto.firstName,
-                last_name: dto.lastName,
-                user_id: user.id,
-              });
-
-            if (adminRegistrarError || !adminRegistrar) {
-              // Clean up the user
-              await this.supabaseService.deleteUser(user.id);
-              throw new Error(
-                adminRegistrarError?.message ||
-                  'Failed to create registrar profile with admin client',
-              );
-            }
-
-            // Use the admin-created registrar
-            const registrarData = adminRegistrar;
-
-            // Step 5: Update the invitation status
-            await this.updateInvitationStatus(
-              invitation.invitation_id,
-              InvitationStatus.ACCEPTED,
+          if (registrarError || !registrar) {
+            throw new Error(
+              registrarError?.message || 'Failed to create registrar profile',
             );
-
-            // Return the complete response
-            return {
-              user: {
-                id: user.id,
-                email: user.email,
-                first_name: dto.firstName,
-                last_name: dto.lastName,
-                role: invitation.user_type,
-              },
-              session: {
-                access_token: session.access_token,
-                refresh_token: session.refresh_token,
-              },
-              registrar: registrarData,
-            };
-          }
-
-          if (!registrar) {
-            throw new Error('Failed to create registrar profile');
           }
 
           // Step 5: Update the invitation status
@@ -463,6 +655,29 @@ export class InvitationsService {
       );
       throw new InternalServerErrorException(
         `Failed to remove invitation: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Helper method to update invitation status directly in database
+   */
+  private async updateInvitationStatus(
+    invitation_id: string,
+    status: InvitationStatus,
+  ) {
+    try {
+      return await this.prisma.invitation.update({
+        where: { invitation_id },
+        data: { status },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to update invitation status: ${error.message}`,
+        error.stack,
+      );
+      throw new InternalServerErrorException(
+        `Failed to update invitation status: ${error.message}`,
       );
     }
   }

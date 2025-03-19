@@ -13,10 +13,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '../../../supabase/auth.guard';
 import { RegistrarsService } from '../services/registrars.service';
-import {
-  InviteRegistrarDto,
-  InviteMultipleRegistrarsDto,
-} from '../dto/invite-registrar.dto';
+import { InviteRegistrarsDto } from '../dto/invite-registrar.dto';
 import { UpdateRegistrarDto } from '../dto/update-registrar.dto';
 import { InvitationResponse } from '../interfaces/invitation.interface';
 import { Request } from 'express';
@@ -70,36 +67,25 @@ export class RegistrarsController {
 
   @Post('invite')
   async invite(
-    @Body() inviteRegistrarDto: InviteRegistrarDto,
-    @Req() req: Request & { accessToken: string },
-  ): Promise<InvitationResponse> {
-    return this.registrarsService.inviteRegistrar(
-      inviteRegistrarDto,
-      req.accessToken,
-    );
-  }
-
-  @Post('invite/multiple')
-  async inviteMultiple(
-    @Body() inviteMultipleDto: InviteMultipleRegistrarsDto,
+    @Body() inviteDto: InviteRegistrarsDto,
     @Req() req: Request & { accessToken: string },
   ) {
     const results: InvitationResult[] = [];
 
-    for (const emailDto of inviteMultipleDto.emails) {
+    for (const email of inviteDto.emails) {
       try {
         const invitation = await this.registrarsService.inviteRegistrar(
-          emailDto,
+          { email },
           req.accessToken,
         );
         results.push({
-          email: emailDto.email,
+          email,
           success: true,
           invitation,
         });
       } catch (error) {
         results.push({
-          email: emailDto.email,
+          email,
           success: false,
           error: error instanceof Error ? error.message : 'Unknown error',
         });
@@ -111,14 +97,6 @@ export class RegistrarsController {
       totalFailed: results.filter((r) => !r.success).length,
       results,
     };
-  }
-
-  @Delete('invitations/:id')
-  async cancelInvitation(
-    @Param('id') id: string,
-    @Req() req: Request & { accessToken: string },
-  ): Promise<InvitationResponse> {
-    return this.registrarsService.cancelInvitation(id, req.accessToken);
   }
 
   @Post(':id/suspend')

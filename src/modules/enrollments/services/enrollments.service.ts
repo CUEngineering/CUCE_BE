@@ -6,6 +6,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class EnrollmentsService {
@@ -85,6 +86,7 @@ export class EnrollmentsService {
       // Create enrollment with PENDING status
       const enrollment = await this.prisma.enrollment.create({
         data: {
+          enrollment_id: randomUUID(),
           student_id: studentId,
           course_id: courseId,
           session_id: sessionId,
@@ -316,7 +318,7 @@ export class EnrollmentsService {
     try {
       const enrollment = await this.prisma.enrollment.findUnique({
         where: { enrollment_id: enrollmentId },
-        include: { student: true },
+        include: { students: true },
       });
 
       if (!enrollment) {
@@ -337,7 +339,7 @@ export class EnrollmentsService {
       }
 
       // If not admin, verify this is the student's own enrollment
-      if (!isAdmin && enrollment.student.user_id !== userId) {
+      if (!isAdmin && enrollment.students.user_id !== userId) {
         throw new ForbiddenException(
           'You do not have permission to cancel this enrollment',
         );
@@ -434,10 +436,10 @@ export class EnrollmentsService {
       return await this.prisma.enrollment.findMany({
         where: filters,
         include: {
-          student: true,
-          course: true,
-          session: true,
-          registrar: true,
+          courses: true,
+          students: true,
+          registrars: true,
+          sessions: true,
         },
       });
     } catch (error) {
@@ -461,10 +463,10 @@ export class EnrollmentsService {
       const enrollment = await this.prisma.enrollment.findUnique({
         where: { enrollment_id: enrollmentId },
         include: {
-          student: true,
-          course: true,
-          session: true,
-          registrar: true,
+          courses: true,
+          students: true,
+          registrars: true,
+          sessions: true,
         },
       });
 

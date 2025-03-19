@@ -10,12 +10,13 @@ import {
   HttpException,
   HttpStatus,
   UseGuards,
-  Injectable,
+  BadRequestException,
 } from '@nestjs/common';
 import { InvitationsService } from '../services/invitations.service';
 import { AcceptInvitationDto } from '../dto/accept-invitation.dto';
 import { AuthGuard } from '../../../supabase/auth.guard';
-import { Invitation as InvitationModel } from '../services/invitations.service';
+import { Invitation as InvitationModel } from '../types/invitation.types';
+import type { AcceptanceResult } from '../types/invitation.types';
 
 // Define success response type
 interface SuccessResponse {
@@ -31,59 +32,15 @@ interface TokenValidationResponse {
   invitation?: InvitationModel;
 }
 
-/**
- * A wrapper for InvitationsService that provides type-safe access to service methods
- */
-@Injectable()
-class TypedInvitationsService {
-  constructor(private readonly service: InvitationsService) {}
-
-  async findAll(status?: string): Promise<InvitationModel[]> {
-    return this.service.findAll(status);
-  }
-
-  async findOne(id: string): Promise<InvitationModel> {
-    return this.service.findOne(id);
-  }
-
-  async acceptInvitation(
-    id: string,
-    dto: AcceptInvitationDto,
-  ): Promise<SuccessResponse> {
-    return this.service.acceptInvitation(id, dto);
-  }
-
-  async resendInvitation(id: string): Promise<SuccessResponse> {
-    return this.service.resendInvitation(id);
-  }
-
-  async cancelInvitation(id: string): Promise<SuccessResponse> {
-    return this.service.cancelInvitation(id);
-  }
-
-  async remove(id: string): Promise<SuccessResponse> {
-    return this.service.remove(id);
-  }
-
-  async validateToken(token: string): Promise<TokenValidationResponse> {
-    return this.service.validateToken(token);
-  }
-}
-
 @Controller('invitations')
 export class InvitationsController {
-  private typedService: TypedInvitationsService;
-
-  constructor(private readonly invitationsService: InvitationsService) {
-    // Create a typed wrapper for the service
-    this.typedService = new TypedInvitationsService(invitationsService);
-  }
+  constructor(private readonly invitationsService: InvitationsService) {}
 
   @Get()
   @UseGuards(AuthGuard)
   async findAll(@Query('status') status?: string): Promise<InvitationModel[]> {
     try {
-      const result = await this.typedService.findAll(status);
+      const result = await this.invitationsService.findAll(status);
       if (!result || result.length === 0) {
         throw new HttpException('No invitations found', HttpStatus.NOT_FOUND);
       }
@@ -99,9 +56,10 @@ export class InvitationsController {
   }
 
   @Get(':id')
+  @UseGuards(AuthGuard)
   async findOne(@Param('id') id: string): Promise<InvitationModel> {
     try {
-      return await this.typedService.findOne(id);
+      return await this.invitationsService.findOne(id);
     } catch (error: unknown) {
       throw new HttpException(
         error instanceof Error
@@ -112,14 +70,20 @@ export class InvitationsController {
     }
   }
 
-  @Post(':id/accept')
+  @Post('accept/:token')
   async accept(
-    @Param('id') id: string,
+    @Param('token') token: string,
     @Body() acceptInvitationDto: AcceptInvitationDto,
-  ): Promise<SuccessResponse> {
+  ): Promise<AcceptanceResult> {
     try {
-      return await this.typedService.acceptInvitation(id, acceptInvitationDto);
-    } catch (error: unknown) {
+      return await this.invitationsService.acceptInvitation(
+        token,
+        acceptInvitationDto,
+      );
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
       throw new HttpException(
         error instanceof Error ? error.message : 'Failed to accept invitation',
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -131,7 +95,7 @@ export class InvitationsController {
   @UseGuards(AuthGuard)
   async resend(@Param('id') id: string): Promise<SuccessResponse> {
     try {
-      return await this.typedService.resendInvitation(id);
+      return await this.invitationsService.resendInvitation(id);
     } catch (error: unknown) {
       throw new HttpException(
         error instanceof Error ? error.message : 'Failed to resend invitation',
@@ -144,7 +108,7 @@ export class InvitationsController {
   @UseGuards(AuthGuard)
   async cancel(@Param('id') id: string): Promise<SuccessResponse> {
     try {
-      return await this.typedService.cancelInvitation(id);
+      return await this.invitationsService.cancelInvitation(id);
     } catch (error: unknown) {
       throw new HttpException(
         error instanceof Error ? error.message : 'Failed to cancel invitation',
@@ -157,7 +121,7 @@ export class InvitationsController {
   @UseGuards(AuthGuard)
   async remove(@Param('id') id: string): Promise<SuccessResponse> {
     try {
-      return await this.typedService.remove(id);
+      return await this.invitationsService.remove(id);
     } catch (error: unknown) {
       throw new HttpException(
         error instanceof Error ? error.message : 'Failed to remove invitation',
@@ -171,7 +135,7 @@ export class InvitationsController {
     @Param('token') token: string,
   ): Promise<TokenValidationResponse> {
     try {
-      return await this.typedService.validateToken(token);
+      return await this.invitationsService.validateToken(token);
     } catch (error: unknown) {
       throw new HttpException(
         error instanceof Error ? error.message : 'Failed to validate token',
