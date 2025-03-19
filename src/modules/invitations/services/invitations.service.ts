@@ -5,10 +5,10 @@ import {
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
-import { PrismaService } from '../../../prisma/prisma.service';
+import { PrismaClient } from '@prisma/client';
+import { SupabaseService } from '../../../supabase/supabase.service';
 import { AcceptInvitationDto } from '../dto/accept-invitation.dto';
 import { randomUUID } from 'crypto';
-import { SupabaseService } from '../../../supabase/supabase.service';
 import { InvitationStatus } from '@prisma/client';
 
 /**
@@ -19,7 +19,7 @@ export class InvitationsService {
   private readonly logger = new Logger(InvitationsService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma: PrismaClient,
     private readonly supabaseService: SupabaseService,
   ) {}
 
@@ -36,7 +36,7 @@ export class InvitationsService {
         where.status = status.toUpperCase() as InvitationStatus;
       }
 
-      return await this.prisma.invitation.findMany({
+      return await this.prisma.invitations.findMany({
         where,
         orderBy: {
           created_at: 'desc',
@@ -58,7 +58,7 @@ export class InvitationsService {
    */
   async findOne(invitation_id: string) {
     try {
-      const invitation = await this.prisma.invitation.findUnique({
+      const invitation = await this.prisma.invitations.findUnique({
         where: { invitation_id },
       });
 
@@ -89,7 +89,7 @@ export class InvitationsService {
    */
   async validateToken(token: string) {
     try {
-      const invitation = await this.prisma.invitation.findFirst({
+      const invitation = await this.prisma.invitations.findFirst({
         where: { token },
       });
 
@@ -110,7 +110,7 @@ export class InvitationsService {
 
       if (invitation.expires_at < new Date()) {
         // Automatically update to expired
-        await this.prisma.invitation.update({
+        await this.prisma.invitations.update({
           where: { invitation_id: invitation.invitation_id },
           data: {
             status: InvitationStatus.EXPIRED,
@@ -148,7 +148,7 @@ export class InvitationsService {
     status: InvitationStatus,
   ) {
     try {
-      return await this.prisma.invitation.update({
+      return await this.prisma.invitations.update({
         where: { invitation_id },
         data: { status },
       });
@@ -368,7 +368,7 @@ export class InvitationsService {
       const token = randomUUID();
       const expires_at = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
-      const updatedInvitation = await this.prisma.invitation.update({
+      const updatedInvitation = await this.prisma.invitations.update({
         where: { invitation_id },
         data: { token, expires_at },
       });
@@ -444,7 +444,7 @@ export class InvitationsService {
     try {
       await this.findOne(invitation_id);
 
-      await this.prisma.invitation.delete({
+      await this.prisma.invitations.delete({
         where: { invitation_id },
       });
 

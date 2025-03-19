@@ -3,16 +3,19 @@ import {
   NotFoundException,
   BadRequestException,
   InternalServerErrorException,
+  Inject,
 } from '@nestjs/common';
-import { PrismaService } from '../../../prisma/prisma.service';
+import { PrismaClient } from '@prisma/client';
 import { EnrollmentsService } from '../../enrollments/services/enrollments.service';
 import { randomUUID } from 'crypto';
+import { SupabaseService } from '../../../supabase/supabase.service';
 
 @Injectable()
 export class SessionsService {
   constructor(
-    private readonly prisma: PrismaService,
+    @Inject('PRISMA_CLIENT') private readonly prisma: PrismaClient,
     private readonly enrollmentsService: EnrollmentsService,
+    private readonly supabaseService: SupabaseService,
   ) {}
 
   /**
@@ -20,19 +23,14 @@ export class SessionsService {
    */
   async findAll() {
     try {
-      return await this.prisma.session.findMany({
+      return await this.prisma.public_sessions.findMany({
         orderBy: {
-          start_date: 'desc',
+          created_at: 'desc',
         },
       });
     } catch (error) {
-      if (error instanceof Error) {
-        throw new InternalServerErrorException(
-          `Failed to find sessions: ${error.message}`,
-        );
-      }
       throw new InternalServerErrorException(
-        'An unknown error occurred while retrieving sessions',
+        `Failed to retrieve sessions: ${error.message}`,
       );
     }
   }
@@ -42,7 +40,7 @@ export class SessionsService {
    */
   async findOne(sessionId: string) {
     try {
-      const session = await this.prisma.session.findUnique({
+      const session = await this.prisma.public_sessions.findUnique({
         where: { session_id: sessionId },
       });
 
@@ -56,13 +54,8 @@ export class SessionsService {
         throw error;
       }
 
-      if (error instanceof Error) {
-        throw new InternalServerErrorException(
-          `Failed to find session: ${error.message}`,
-        );
-      }
       throw new InternalServerErrorException(
-        'An unknown error occurred while retrieving session',
+        `Failed to retrieve session: ${error.message}`,
       );
     }
   }
@@ -98,7 +91,7 @@ export class SessionsService {
       }
 
       // Create the session with UPCOMING status
-      const session = await this.prisma.session.create({
+      const session = await this.prisma.public_sessions.create({
         data: {
           session_id: randomUUID(),
           ...sessionData,
@@ -183,7 +176,7 @@ export class SessionsService {
       }
 
       // Update the session
-      const updatedSession = await this.prisma.session.update({
+      const updatedSession = await this.prisma.public_sessions.update({
         where: { session_id: sessionId },
         data: updateData,
       });
@@ -227,7 +220,7 @@ export class SessionsService {
       }
 
       // Close any currently active sessions
-      const activeSessions = await this.prisma.session.findMany({
+      const activeSessions = await this.prisma.public_sessions.findMany({
         where: {
           session_status: 'ACTIVE',
         },
@@ -238,7 +231,7 @@ export class SessionsService {
       }
 
       // Update the session status to ACTIVE
-      const updatedSession = await this.prisma.session.update({
+      const updatedSession = await this.prisma.public_sessions.update({
         where: { session_id: sessionId },
         data: {
           session_status: 'ACTIVE',
@@ -290,7 +283,7 @@ export class SessionsService {
       }
 
       // Update the session status to CLOSED
-      const updatedSession = await this.prisma.session.update({
+      const updatedSession = await this.prisma.public_sessions.update({
         where: { session_id: sessionId },
         data: {
           session_status: 'CLOSED',

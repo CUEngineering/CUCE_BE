@@ -3,7 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { validate } from './config/env.validation';
-import { PrismaModule } from './prisma/prisma.module';
+
 import { SupabaseModule } from './supabase/supabase.module';
 import { CoursesModule } from './modules/courses/courses.module';
 import { ProgramsModule } from './modules/programs/programs.module';
@@ -12,6 +12,7 @@ import { InvitationsModule } from './modules/invitations/invitations.module';
 import { HealthModule } from './modules/health/health.module';
 import { EnrollmentsModule } from './modules/enrollments/enrollments.module';
 import { SessionsModule } from './modules/sessions/sessions.module';
+import { PrismaClient } from '@prisma/client';
 
 @Module({
   imports: [
@@ -20,7 +21,6 @@ import { SessionsModule } from './modules/sessions/sessions.module';
       validate,
       envFilePath: ['.env', '.env.example'],
     }),
-    PrismaModule,
     SupabaseModule,
     CoursesModule,
     ProgramsModule,
@@ -31,6 +31,12 @@ import { SessionsModule } from './modules/sessions/sessions.module';
     SessionsModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: 'PRISMA_CLIENT',
+      useValue: new PrismaClient(),
+    },
+  ],
 })
 export class AppModule {}

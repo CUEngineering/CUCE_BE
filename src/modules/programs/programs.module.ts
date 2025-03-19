@@ -1,13 +1,19 @@
 import { Module } from '@nestjs/common';
-import { ProgramController } from './controllers/program.controller';
 import { ProgramService } from './services/program.service';
-import { PrismaModule } from '../../prisma/prisma.module';
+import { ProgramController } from './controllers/program.controller';
 import { SupabaseModule } from '../../supabase/supabase.module';
+import { PrismaClient } from '@prisma/client';
 
 @Module({
-  imports: [PrismaModule, SupabaseModule],
+  imports: [SupabaseModule],
   controllers: [ProgramController],
-  providers: [ProgramService],
+  providers: [
+    ProgramService,
+    {
+      provide: 'PRISMA_CLIENT',
+      useValue: new PrismaClient(),
+    },
+  ],
   exports: [ProgramService],
 })
 export class ProgramsModule {}

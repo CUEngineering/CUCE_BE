@@ -4,13 +4,18 @@ import {
   BadRequestException,
   InternalServerErrorException,
   ForbiddenException,
+  Inject,
 } from '@nestjs/common';
-import { PrismaService } from '../../../prisma/prisma.service';
+import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import { SupabaseService } from '../../../supabase/supabase.service';
 
 @Injectable()
 export class EnrollmentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject('PRISMA_CLIENT') private readonly prisma: PrismaClient,
+    private readonly supabaseService: SupabaseService,
+  ) {}
 
   /**
    * Create a new enrollment request
@@ -23,7 +28,7 @@ export class EnrollmentsService {
   ) {
     try {
       // Check if student already has a non-rejected enrollment for this course in this session
-      const existingEnrollment = await this.prisma.enrollment.findFirst({
+      const existingEnrollment = await this.prisma.enrollments.findFirst({
         where: {
           student_id: studentId,
           course_id: courseId,
@@ -41,7 +46,7 @@ export class EnrollmentsService {
       }
 
       // Check if session is active and enrollment deadline hasn't passed
-      const session = await this.prisma.session.findUnique({
+      const session = await this.prisma.public_sessions.findUnique({
         where: { session_id: sessionId },
       });
 
@@ -62,7 +67,7 @@ export class EnrollmentsService {
       }
 
       // Check if course exists and is open for enrollment
-      const sessionCourse = await this.prisma.sessionCourse.findUnique({
+      const sessionCourse = await this.prisma.session_courses.findUnique({
         where: {
           session_id_course_id: {
             session_id: sessionId,
@@ -84,7 +89,7 @@ export class EnrollmentsService {
       }
 
       // Create enrollment with PENDING status
-      const enrollment = await this.prisma.enrollment.create({
+      const enrollment = await this.prisma.enrollments.create({
         data: {
           enrollment_id: randomUUID(),
           student_id: studentId,
@@ -127,7 +132,7 @@ export class EnrollmentsService {
    */
   async approveEnrollment(enrollmentId: string, registrarId: string) {
     try {
-      const enrollment = await this.prisma.enrollment.findUnique({
+      const enrollment = await this.prisma.enrollments.findUnique({
         where: { enrollment_id: enrollmentId },
       });
 
@@ -144,7 +149,7 @@ export class EnrollmentsService {
       }
 
       // Check if registrar is already assigned to this student for this session
-      const existingAssignment = await this.prisma.enrollment.findFirst({
+      const existingAssignment = await this.prisma.enrollments.findFirst({
         where: {
           student_id: enrollment.student_id,
           session_id: enrollment.session_id,
@@ -163,7 +168,7 @@ export class EnrollmentsService {
       }
 
       // Update enrollment to APPROVED status and assign registrar
-      const updatedEnrollment = await this.prisma.enrollment.update({
+      const updatedEnrollment = await this.prisma.enrollments.update({
         where: { enrollment_id: enrollmentId },
         data: {
           enrollment_status: 'APPROVED',
@@ -172,7 +177,7 @@ export class EnrollmentsService {
       });
 
       // Also assign this registrar to all other pending enrollments from this student in this session
-      await this.prisma.enrollment.updateMany({
+      await this.prisma.enrollments.updateMany({
         where: {
           student_id: enrollment.student_id,
           session_id: enrollment.session_id,
@@ -219,7 +224,7 @@ export class EnrollmentsService {
     rejectionReason: string,
   ) {
     try {
-      const enrollment = await this.prisma.enrollment.findUnique({
+      const enrollment = await this.prisma.enrollments.findUnique({
         where: { enrollment_id: enrollmentId },
       });
 
@@ -236,7 +241,7 @@ export class EnrollmentsService {
       }
 
       // Check if registrar is already assigned to this student for this session
-      const existingAssignment = await this.prisma.enrollment.findFirst({
+      const existingAssignment = await this.prisma.enrollments.findFirst({
         where: {
           student_id: enrollment.student_id,
           session_id: enrollment.session_id,
@@ -259,7 +264,7 @@ export class EnrollmentsService {
       }
 
       // Update enrollment to REJECTED status, assign registrar, and add rejection reason
-      const updatedEnrollment = await this.prisma.enrollment.update({
+      const updatedEnrollment = await this.prisma.enrollments.update({
         where: { enrollment_id: enrollmentId },
         data: {
           enrollment_status: 'REJECTED',
@@ -269,7 +274,7 @@ export class EnrollmentsService {
       });
 
       // Also assign this registrar to all other pending enrollments from this student in this session
-      await this.prisma.enrollment.updateMany({
+      await this.prisma.enrollments.updateMany({
         where: {
           student_id: enrollment.student_id,
           session_id: enrollment.session_id,
@@ -316,7 +321,7 @@ export class EnrollmentsService {
     isAdmin = false,
   ) {
     try {
-      const enrollment = await this.prisma.enrollment.findUnique({
+      const enrollment = await this.prisma.enrollments.findUnique({
         where: { enrollment_id: enrollmentId },
         include: { students: true },
       });
@@ -346,7 +351,7 @@ export class EnrollmentsService {
       }
 
       // Update enrollment to CANCELLED status
-      const updatedEnrollment = await this.prisma.enrollment.update({
+      const updatedEnrollment = await this.prisma.enrollments.update({
         where: { enrollment_id: enrollmentId },
         data: {
           enrollment_status: 'CANCELLED',
@@ -389,7 +394,7 @@ export class EnrollmentsService {
     try {
       if (newSessionStatus === 'ACTIVE') {
         // When session becomes active, change all APPROVED enrollments to ACTIVE
-        await this.prisma.enrollment.updateMany({
+        await this.prisma.enrollments.updateMany({
           where: {
             session_id: sessionId,
             enrollment_status: 'APPROVED',
@@ -400,7 +405,7 @@ export class EnrollmentsService {
         });
       } else if (newSessionStatus === 'CLOSED') {
         // When session is closed, change all ACTIVE enrollments to COMPLETED
-        await this.prisma.enrollment.updateMany({
+        await this.prisma.enrollments.updateMany({
           where: {
             session_id: sessionId,
             enrollment_status: 'ACTIVE',
@@ -433,7 +438,7 @@ export class EnrollmentsService {
    */
   async findAll(filters: any = {}) {
     try {
-      return await this.prisma.enrollment.findMany({
+      return await this.prisma.enrollments.findMany({
         where: filters,
         include: {
           courses: true,
@@ -460,7 +465,7 @@ export class EnrollmentsService {
    */
   async findOne(enrollmentId: string) {
     try {
-      const enrollment = await this.prisma.enrollment.findUnique({
+      const enrollment = await this.prisma.enrollments.findUnique({
         where: { enrollment_id: enrollmentId },
         include: {
           courses: true,

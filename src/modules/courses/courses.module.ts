@@ -1,13 +1,19 @@
 import { Module } from '@nestjs/common';
-import { CourseController } from './controllers/course.controller';
 import { CourseService } from './services/course.service';
-import { PrismaModule } from '../../prisma/prisma.module';
+import { CourseController } from './controllers/course.controller';
 import { SupabaseModule } from '../../supabase/supabase.module';
+import { PrismaClient } from '@prisma/client';
 
 @Module({
-  imports: [PrismaModule, SupabaseModule],
+  imports: [SupabaseModule],
   controllers: [CourseController],
-  providers: [CourseService],
+  providers: [
+    CourseService,
+    {
+      provide: 'PRISMA_CLIENT',
+      useValue: new PrismaClient(),
+    },
+  ],
   exports: [CourseService],
 })
 export class CoursesModule {}
