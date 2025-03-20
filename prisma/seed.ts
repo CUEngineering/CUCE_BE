@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'crypto';
 
+// Create Prisma Client instance with explicit typing
 const prisma = new PrismaClient();
 
 async function main() {
@@ -138,6 +139,7 @@ async function main() {
   });
 
   // Create Students
+  const student1UUID = randomUUID();
   const student1 = await prisma.students.create({
     data: {
       reg_number: 'STU001',
@@ -146,10 +148,11 @@ async function main() {
       email: 'john.doe@example.com',
       profile_picture: 'https://randomuser.me/api/portraits/men/1.jpg',
       program_id: undergraduateProgram.program_id,
-      user_id: randomUUID(),
+      user_id: student1UUID,
     },
   });
 
+  const student2UUID = randomUUID();
   const student2 = await prisma.students.create({
     data: {
       reg_number: 'STU002',
@@ -158,18 +161,19 @@ async function main() {
       email: 'jane.smith@example.com',
       profile_picture: 'https://randomuser.me/api/portraits/women/1.jpg',
       program_id: graduateProgram.program_id,
-      user_id: randomUUID(),
+      user_id: student2UUID,
     },
   });
 
   // Create Registrars
+  const registrarUUID = randomUUID();
   const registrar = await prisma.registrars.create({
     data: {
       first_name: 'Robert',
       last_name: 'Johnson',
       email: 'robert.johnson@example.com',
       profile_picture: 'https://randomuser.me/api/portraits/men/10.jpg',
-      user_id: randomUUID(),
+      user_id: registrarUUID,
       is_suspended: false,
     },
   });
@@ -178,15 +182,15 @@ async function main() {
   await prisma.user_roles.createMany({
     data: [
       {
-        user_id: student1.user_id,
+        user_id: student1UUID,
         role: 'STUDENT',
       },
       {
-        user_id: student2.user_id,
+        user_id: student2UUID,
         role: 'STUDENT',
       },
       {
-        user_id: registrar.user_id,
+        user_id: registrarUUID,
         role: 'REGISTRAR',
       },
     ],
@@ -227,6 +231,7 @@ async function main() {
         student_id: student1.student_id,
         course_id: databaseCourse.course_id,
         session_id: currentSession.session_id,
+        registrar_id: null,
       },
       {
         enrollment_status: 'APPROVED',
@@ -248,19 +253,23 @@ async function main() {
   });
 
   // Create Invitations
+  const token1 = randomUUID();
+  const token2 = randomUUID();
+  const expiryDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
   await prisma.invitations.createMany({
     data: [
       {
         email: 'new.student@example.com',
-        token: randomUUID(),
-        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+        token: token1,
+        expires_at: expiryDate,
         status: 'PENDING',
         user_type: 'STUDENT',
       },
       {
         email: 'new.registrar@example.com',
-        token: randomUUID(),
-        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+        token: token2,
+        expires_at: expiryDate,
         status: 'PENDING',
         user_type: 'REGISTRAR',
       },
