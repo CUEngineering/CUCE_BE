@@ -92,6 +92,7 @@ model registrars {
   created_at      DateTime          @default(now())
   updated_at      DateTime          @updatedAt
   is_suspended    Boolean           @default(false)
+  is_deactivated  Boolean           @default(false)
   enrollments     enrollments[]
   invitations     invitations[]
 }

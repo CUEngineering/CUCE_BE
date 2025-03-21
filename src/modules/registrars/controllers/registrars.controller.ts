@@ -18,12 +18,6 @@ import { UpdateRegistrarDto } from '../dto/update-registrar.dto';
 import { InvitationResponse } from '../interfaces/invitation.interface';
 import { Request } from 'express';
 
-import {
-  Registrar,
-  RegistrarResponse,
-  RegistrarStats,
-} from '../types/registrar.types';
-
 interface InvitationResult {
   email: string;
   success: boolean;
@@ -62,9 +56,9 @@ export class RegistrarsController {
     );
   }
 
-  @Delete(':id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(
+  @Patch(':id/deactivate')
+  @HttpCode(HttpStatus.OK)
+  async deactivate(
     @Param('id') id: number,
     @Req() req: Request & { accessToken: string },
   ) {
@@ -105,7 +99,7 @@ export class RegistrarsController {
     };
   }
 
-  @Post(':id/suspend')
+  @Patch(':id/suspend')
   async suspendRegistrar(
     @Param('id') id: number,
     @Req() req: Request & { accessToken: string },
@@ -113,7 +107,7 @@ export class RegistrarsController {
     return this.registrarsService.suspend(id, req.accessToken);
   }
 
-  @Post(':id/unsuspend')
+  @Patch(':id/unsuspend')
   async unsuspendRegistrar(
     @Param('id') id: number,
     @Req() req: Request & { accessToken: string },

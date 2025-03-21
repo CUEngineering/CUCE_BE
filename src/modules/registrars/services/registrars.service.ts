@@ -104,22 +104,52 @@ export class RegistrarsService {
     registrar_id: number,
     accessToken: string,
   ): Promise<RegistrarResponse> {
-    const result = await this.supabaseService.delete(
-      accessToken,
-      'registrars',
-      { registrar_id },
-    );
+    try {
+      // First check if registrar exists and current state
+      const registrar = await this.findOne(registrar_id, accessToken);
 
-    if (!result || result.length === 0) {
-      throw new NotFoundException(
-        `Registrar with ID ${registrar_id} not found`,
+      if (registrar.is_deactivated) {
+        throw new BadRequestException('Registrar is already deactivated');
+      }
+
+      const result = (await this.supabaseService.update(
+        accessToken,
+        'registrars',
+        { registrar_id },
+        {
+          is_deactivated: true,
+        },
+      )) as unknown as Registrar[];
+
+      if (!result || result.length === 0) {
+        throw new NotFoundException(
+          `Registrar with ID ${registrar_id} not found`,
+        );
+      }
+
+      return {
+        success: true,
+        message: `Registrar with ID ${registrar_id} deactivated successfully`,
+        registrar: result[0],
+      };
+    } catch (error) {
+      // Rethrow known NestJS exceptions
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+
+      // Log unexpected errors
+      this.logger.error(
+        `Error deactivating registrar ${registrar_id}: ${error.message}`,
+        error.stack,
       );
-    }
 
-    return {
-      success: true,
-      message: `Registrar with ID ${registrar_id} removed successfully`,
-    };
+      // Handle unexpected errors
+      throw new InternalServerErrorException('Failed to deactivate registrar');
+    }
   }
 
   async inviteRegistrar(
