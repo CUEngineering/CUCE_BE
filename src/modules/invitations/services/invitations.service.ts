@@ -417,6 +417,7 @@ export class InvitationsService {
           acceptanceState: state,
         };
       } else {
+        state.rollbackNeeded = true;
         throw new InvitationError(
           InvitationErrorType.INVALID_PROFILE_DATA,
           `Unsupported user type: ${invitation.user_type}`,
