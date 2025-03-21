@@ -77,44 +77,30 @@ export class InvitationsService {
   /**
    * Find a single invitation by ID
    */
-  async findOne(invitation_id: number) {
+  async findOne(accessToken: string, invitation_id: number) {
     try {
       // Validate input
       if (!invitation_id) {
         throw new BadRequestException('Invitation ID is required');
       }
 
-      // Attempt to find the invitation
-      try {
-        const invitation = await this.prisma.invitations.findUnique({
-          where: { invitation_id },
-        });
+      const query = {
+        filter: { invitation_id },
+      };
 
-        if (!invitation) {
-          throw new NotFoundException(
-            `Invitation with ID ${invitation_id} not found`,
-          );
-        }
+      const invitations = await this.supabaseService.select(
+        accessToken,
+        'invitations',
+        query,
+      );
 
-        return invitation;
-      } catch (dbError) {
-        // Log detailed database error
-        this.logger.error(
-          `Database error when finding invitation: ${dbError.message}`,
-          dbError.stack,
-        );
-
-        // Check for specific Prisma error codes
-        if (dbError.code === 'P1001') {
-          throw new InternalServerErrorException(
-            'Unable to connect to the database',
-          );
-        }
-
-        throw new InternalServerErrorException(
-          `Failed to find invitation: ${dbError.message}`,
+      if (!invitations || invitations.length === 0) {
+        throw new NotFoundException(
+          `Invitation with ID ${invitation_id} not found`,
         );
       }
+
+      return invitations[0];
     } catch (error) {
       // Rethrow known error types
       if (
@@ -458,7 +444,7 @@ export class InvitationsService {
   /**
    * Resend an invitation with a new token and expiration date
    */
-  async resendInvitation(invitation_id: number) {
+  async resendInvitation(accessToken: string, invitation_id: number) {
     try {
       // Validate input
       if (!invitation_id) {
@@ -468,7 +454,7 @@ export class InvitationsService {
       // Attempt to find the invitation
       let invitation;
       try {
-        invitation = await this.findOne(invitation_id);
+        invitation = await this.findOne(accessToken, invitation_id);
       } catch (findError) {
         // Distinguish between different types of not found errors
         if (findError instanceof NotFoundException) {
@@ -499,10 +485,16 @@ export class InvitationsService {
       // Attempt to update invitation
       let updatedInvitation;
       try {
-        updatedInvitation = await this.prisma.invitations.update({
-          where: { invitation_id },
-          data: { token, expires_at },
-        });
+        const { data, error } = await this.supabaseService
+          .getClientWithAuth(accessToken)
+          .from('invitations')
+          .update({ token, expires_at })
+          .eq('invitation_id', invitation_id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        updatedInvitation = data;
       } catch (updateError) {
         // Log detailed error information
         this.logger.error(
@@ -510,14 +502,6 @@ export class InvitationsService {
           updateError.stack,
         );
 
-        // Check for specific error types
-        if (updateError.code === 'P2002') {
-          throw new InternalServerErrorException(
-            'Unique constraint violation during invitation resend',
-          );
-        }
-
-        // Generic database update error
         throw new InternalServerErrorException(
           `Unable to resend invitation: ${updateError.message}`,
         );
@@ -553,7 +537,7 @@ export class InvitationsService {
   /**
    * Cancel an invitation
    */
-  async cancelInvitation(invitation_id: number) {
+  async cancelInvitation(accessToken: string, invitation_id: number) {
     try {
       // Validate input
       if (!invitation_id) {
@@ -563,7 +547,7 @@ export class InvitationsService {
       // Attempt to find the invitation
       let invitation;
       try {
-        invitation = await this.findOne(invitation_id);
+        invitation = await this.findOne(accessToken, invitation_id);
       } catch (findError) {
         // Distinguish between different types of not found errors
         if (findError instanceof NotFoundException) {
@@ -592,10 +576,16 @@ export class InvitationsService {
       // Attempt to update invitation status
       let updatedInvitation;
       try {
-        updatedInvitation = await this.updateInvitationStatus(
-          invitation_id,
-          InvitationStatus.CANCELLED,
-        );
+        const { data, error } = await this.supabaseService
+          .getClientWithAuth(accessToken)
+          .from('invitations')
+          .update({ status: InvitationStatus.CANCELLED })
+          .eq('invitation_id', invitation_id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        updatedInvitation = data;
       } catch (updateError) {
         // Log detailed error information
         this.logger.error(
@@ -603,14 +593,6 @@ export class InvitationsService {
           updateError.stack,
         );
 
-        // Check for specific error types
-        if (updateError.code === 'P2002') {
-          throw new InternalServerErrorException(
-            'Unique constraint violation during invitation cancellation',
-          );
-        }
-
-        // Generic database update error
         throw new InternalServerErrorException(
           `Unable to cancel invitation: ${updateError.message}`,
         );
@@ -656,7 +638,7 @@ export class InvitationsService {
   /**
    * Remove an invitation
    */
-  async remove(invitation_id: number) {
+  async remove(accessToken: string, invitation_id: number) {
     try {
       // Validate input
       if (!invitation_id) {
@@ -665,7 +647,7 @@ export class InvitationsService {
 
       // Attempt to find the invitation first
       try {
-        await this.findOne(invitation_id);
+        await this.findOne(accessToken, invitation_id);
       } catch (findError) {
         // Rethrow if it's a not found error
         if (findError instanceof NotFoundException) {
@@ -684,9 +666,13 @@ export class InvitationsService {
 
       // Attempt to delete the invitation
       try {
-        await this.prisma.invitations.delete({
-          where: { invitation_id },
-        });
+        const { error } = await this.supabaseService
+          .getClientWithAuth(accessToken)
+          .from('invitations')
+          .delete()
+          .eq('invitation_id', invitation_id);
+
+        if (error) throw error;
       } catch (deleteError) {
         // Log detailed error information
         this.logger.error(
@@ -694,14 +680,6 @@ export class InvitationsService {
           deleteError.stack,
         );
 
-        // Check for specific error types
-        if (deleteError.code === 'P2025') {
-          throw new NotFoundException(
-            `Invitation with ID ${invitation_id} not found or already deleted`,
-          );
-        }
-
-        // Generic database delete error
         throw new InternalServerErrorException(
           `Unable to remove invitation: ${deleteError.message}`,
         );

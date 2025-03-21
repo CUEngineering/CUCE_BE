@@ -65,9 +65,9 @@ export class InvitationsController {
 
   @Get(':id')
   @UseGuards(AuthGuard)
-  async findOne(@Param('id') id: number): Promise<InvitationModel> {
+  async findOne(@Param('id') id: number, @Request() req?: any): Promise<any> {
     try {
-      return await this.invitationsService.findOne(id);
+      return await this.invitationsService.findOne(req.accessToken, id);
     } catch (error: unknown) {
       throw new HttpException(
         error instanceof Error
@@ -101,9 +101,15 @@ export class InvitationsController {
 
   @Post(':id/resend')
   @UseGuards(AuthGuard)
-  async resend(@Param('id') id: number): Promise<SuccessResponse> {
+  async resend(
+    @Param('id') id: number,
+    @Request() req?: any,
+  ): Promise<SuccessResponse> {
     try {
-      return await this.invitationsService.resendInvitation(id);
+      return await this.invitationsService.resendInvitation(
+        req.accessToken,
+        id,
+      );
     } catch (error: unknown) {
       throw new HttpException(
         error instanceof Error ? error.message : 'Failed to resend invitation',
@@ -114,9 +120,15 @@ export class InvitationsController {
 
   @Put(':id/cancel')
   @UseGuards(AuthGuard)
-  async cancel(@Param('id') id: number): Promise<SuccessResponse> {
+  async cancel(
+    @Param('id') id: number,
+    @Request() req?: any,
+  ): Promise<SuccessResponse> {
     try {
-      return await this.invitationsService.cancelInvitation(id);
+      return await this.invitationsService.cancelInvitation(
+        req.accessToken,
+        id,
+      );
     } catch (error: unknown) {
       throw new HttpException(
         error instanceof Error ? error.message : 'Failed to cancel invitation',
@@ -127,9 +139,12 @@ export class InvitationsController {
 
   @Delete(':id')
   @UseGuards(AuthGuard)
-  async remove(@Param('id') id: number): Promise<SuccessResponse> {
+  async remove(
+    @Param('id') id: number,
+    @Request() req?: any,
+  ): Promise<SuccessResponse> {
     try {
-      return await this.invitationsService.remove(id);
+      return await this.invitationsService.remove(req.accessToken, id);
     } catch (error: unknown) {
       throw new HttpException(
         error instanceof Error ? error.message : 'Failed to remove invitation',
