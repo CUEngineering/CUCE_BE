@@ -46,7 +46,7 @@ export class InvitationsController {
   ): Promise<any[]> {
     try {
       const result = await this.invitationsService.findAll(
-        req.user.token,
+        req.accessToken,
         status,
       );
       if (!result || result.length === 0) {
