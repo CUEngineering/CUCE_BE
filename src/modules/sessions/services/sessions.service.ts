@@ -23,7 +23,7 @@ export class SessionsService {
    */
   async findAll() {
     try {
-      return await this.prisma.public_sessions.findMany({
+      return await this.prisma.sessions.findMany({
         orderBy: {
           created_at: 'desc',
         },
@@ -38,9 +38,9 @@ export class SessionsService {
   /**
    * Get a specific session
    */
-  async findOne(sessionId: string) {
+  async findOne(sessionId: number) {
     try {
-      const session = await this.prisma.public_sessions.findUnique({
+      const session = await this.prisma.sessions.findUnique({
         where: { session_id: sessionId },
       });
 
@@ -91,9 +91,8 @@ export class SessionsService {
       }
 
       // Create the session with UPCOMING status
-      const session = await this.prisma.public_sessions.create({
+      const session = await this.prisma.sessions.create({
         data: {
-          session_id: randomUUID(),
           ...sessionData,
           session_status: 'UPCOMING',
         },
@@ -124,7 +123,7 @@ export class SessionsService {
    * Update a session
    */
   async update(
-    sessionId: string,
+    sessionId: number,
     updateData: {
       session_name?: string;
       start_date?: Date;
@@ -176,7 +175,7 @@ export class SessionsService {
       }
 
       // Update the session
-      const updatedSession = await this.prisma.public_sessions.update({
+      const updatedSession = await this.prisma.sessions.update({
         where: { session_id: sessionId },
         data: updateData,
       });
@@ -209,7 +208,7 @@ export class SessionsService {
    * Start a session
    * This will close any currently active sessions and update enrollment statuses
    */
-  async startSession(sessionId: string) {
+  async startSession(sessionId: number) {
     try {
       const session = await this.findOne(sessionId);
 
@@ -220,7 +219,7 @@ export class SessionsService {
       }
 
       // Close any currently active sessions
-      const activeSessions = await this.prisma.public_sessions.findMany({
+      const activeSessions = await this.prisma.sessions.findMany({
         where: {
           session_status: 'ACTIVE',
         },
@@ -231,7 +230,7 @@ export class SessionsService {
       }
 
       // Update the session status to ACTIVE
-      const updatedSession = await this.prisma.public_sessions.update({
+      const updatedSession = await this.prisma.sessions.update({
         where: { session_id: sessionId },
         data: {
           session_status: 'ACTIVE',
@@ -272,7 +271,7 @@ export class SessionsService {
    * Close a session
    * This will update enrollment statuses from ACTIVE to COMPLETED
    */
-  async closeSession(sessionId: string) {
+  async closeSession(sessionId: number) {
     try {
       const session = await this.findOne(sessionId);
 
@@ -283,7 +282,7 @@ export class SessionsService {
       }
 
       // Update the session status to CLOSED
-      const updatedSession = await this.prisma.public_sessions.update({
+      const updatedSession = await this.prisma.sessions.update({
         where: { session_id: sessionId },
         data: {
           session_status: 'CLOSED',

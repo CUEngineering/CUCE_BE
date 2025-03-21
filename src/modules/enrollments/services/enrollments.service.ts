@@ -21,9 +21,9 @@ export class EnrollmentsService {
    * Create a new enrollment request
    */
   async createEnrollment(
-    studentId: string,
-    courseId: string,
-    sessionId: string,
+    studentId: number,
+    courseId: number,
+    sessionId: number,
     isSpecialRequest = false,
   ) {
     try {
@@ -46,7 +46,7 @@ export class EnrollmentsService {
       }
 
       // Check if session is active and enrollment deadline hasn't passed
-      const session = await this.prisma.public_sessions.findUnique({
+      const session = await this.prisma.sessions.findUnique({
         where: { session_id: sessionId },
       });
 
@@ -91,7 +91,6 @@ export class EnrollmentsService {
       // Create enrollment with PENDING status
       const enrollment = await this.prisma.enrollments.create({
         data: {
-          enrollment_id: randomUUID(),
           student_id: studentId,
           course_id: courseId,
           session_id: sessionId,
@@ -130,7 +129,7 @@ export class EnrollmentsService {
   /**
    * Approve an enrollment
    */
-  async approveEnrollment(enrollmentId: string, registrarId: string) {
+  async approveEnrollment(enrollmentId: number, registrarId: number) {
     try {
       const enrollment = await this.prisma.enrollments.findUnique({
         where: { enrollment_id: enrollmentId },
@@ -219,8 +218,8 @@ export class EnrollmentsService {
    * Reject an enrollment with a reason
    */
   async rejectEnrollment(
-    enrollmentId: string,
-    registrarId: string,
+    enrollmentId: number,
+    registrarId: number,
     rejectionReason: string,
   ) {
     try {
@@ -316,14 +315,14 @@ export class EnrollmentsService {
    * Cancel an enrollment
    */
   async cancelEnrollment(
-    enrollmentId: string,
+    enrollmentId: number,
     userId: string,
     isAdmin = false,
   ) {
     try {
       const enrollment = await this.prisma.enrollments.findUnique({
         where: { enrollment_id: enrollmentId },
-        include: { students: true },
+        include: { student: true },
       });
 
       if (!enrollment) {
@@ -344,7 +343,7 @@ export class EnrollmentsService {
       }
 
       // If not admin, verify this is the student's own enrollment
-      if (!isAdmin && enrollment.students.user_id !== userId) {
+      if (!isAdmin && enrollment.student.user_id !== userId) {
         throw new ForbiddenException(
           'You do not have permission to cancel this enrollment',
         );
@@ -388,7 +387,7 @@ export class EnrollmentsService {
    * Automatically transition enrollments when session status changes
    */
   async updateEnrollmentsForSessionChange(
-    sessionId: string,
+    sessionId: number,
     newSessionStatus: string,
   ) {
     try {
@@ -441,10 +440,10 @@ export class EnrollmentsService {
       return await this.prisma.enrollments.findMany({
         where: filters,
         include: {
-          courses: true,
-          students: true,
-          registrars: true,
-          sessions: true,
+          course: true,
+          student: true,
+          registrar: true,
+          session: true,
         },
       });
     } catch (error) {
@@ -463,15 +462,15 @@ export class EnrollmentsService {
   /**
    * Get a specific enrollment
    */
-  async findOne(enrollmentId: string) {
+  async findOne(enrollmentId: number) {
     try {
       const enrollment = await this.prisma.enrollments.findUnique({
         where: { enrollment_id: enrollmentId },
         include: {
-          courses: true,
-          students: true,
-          registrars: true,
-          sessions: true,
+          course: true,
+          student: true,
+          registrar: true,
+          session: true,
         },
       });
 

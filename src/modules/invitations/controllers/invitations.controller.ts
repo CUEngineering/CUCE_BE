@@ -11,12 +11,14 @@ import {
   HttpStatus,
   UseGuards,
   BadRequestException,
+  Request,
 } from '@nestjs/common';
 import { InvitationsService } from '../services/invitations.service';
 import { AcceptInvitationDto } from '../dto/accept-invitation.dto';
 import { AuthGuard } from '../../../supabase/auth.guard';
 import { Invitation as InvitationModel } from '../types/invitation.types';
 import type { AcceptanceResult } from '../types/invitation.types';
+import { InvitationError } from '../types/errors';
 
 // Define success response type
 interface SuccessResponse {
@@ -38,9 +40,15 @@ export class InvitationsController {
 
   @Get()
   @UseGuards(AuthGuard)
-  async findAll(@Query('status') status?: string): Promise<InvitationModel[]> {
+  async findAll(
+    @Query('status') status?: string,
+    @Request() req?: any,
+  ): Promise<any[]> {
     try {
-      const result = await this.invitationsService.findAll(status);
+      const result = await this.invitationsService.findAll(
+        req.user.token,
+        status,
+      );
       if (!result || result.length === 0) {
         throw new HttpException('No invitations found', HttpStatus.NOT_FOUND);
       }
@@ -57,7 +65,7 @@ export class InvitationsController {
 
   @Get(':id')
   @UseGuards(AuthGuard)
-  async findOne(@Param('id') id: string): Promise<InvitationModel> {
+  async findOne(@Param('id') id: number): Promise<InvitationModel> {
     try {
       return await this.invitationsService.findOne(id);
     } catch (error: unknown) {
@@ -81,8 +89,8 @@ export class InvitationsController {
         acceptInvitationDto,
       );
     } catch (error) {
-      if (error instanceof BadRequestException) {
-        throw error;
+      if (error instanceof InvitationError) {
+        throw new HttpException(error.message, error.statusCode);
       }
       throw new HttpException(
         error instanceof Error ? error.message : 'Failed to accept invitation',
@@ -93,7 +101,7 @@ export class InvitationsController {
 
   @Post(':id/resend')
   @UseGuards(AuthGuard)
-  async resend(@Param('id') id: string): Promise<SuccessResponse> {
+  async resend(@Param('id') id: number): Promise<SuccessResponse> {
     try {
       return await this.invitationsService.resendInvitation(id);
     } catch (error: unknown) {
@@ -106,7 +114,7 @@ export class InvitationsController {
 
   @Put(':id/cancel')
   @UseGuards(AuthGuard)
-  async cancel(@Param('id') id: string): Promise<SuccessResponse> {
+  async cancel(@Param('id') id: number): Promise<SuccessResponse> {
     try {
       return await this.invitationsService.cancelInvitation(id);
     } catch (error: unknown) {
@@ -119,7 +127,7 @@ export class InvitationsController {
 
   @Delete(':id')
   @UseGuards(AuthGuard)
-  async remove(@Param('id') id: string): Promise<SuccessResponse> {
+  async remove(@Param('id') id: number): Promise<SuccessResponse> {
     try {
       return await this.invitationsService.remove(id);
     } catch (error: unknown) {

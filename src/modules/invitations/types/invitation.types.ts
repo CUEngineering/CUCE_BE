@@ -1,14 +1,14 @@
 import { InvitationStatus } from '@prisma/client';
 
 export interface Invitation {
-  invitation_id: string;
+  invitation_id: number;
   email: string;
   token: string;
   expires_at: Date;
   status: InvitationStatus;
   user_type: string;
-  student_id?: string | null;
-  registrar_id?: string | null;
+  student_id?: number | null;
+  registrar_id?: number | null;
   created_at: Date;
   updated_at: Date;
 }
