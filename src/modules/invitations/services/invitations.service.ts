@@ -381,21 +381,24 @@ export class InvitationsService {
 
         // Step 5: Update Invitation Status
         state.currentStep = 'invitationUpdate';
-        const { error: updateError } = await userClient
+        const { data, error: updateError } = await userClient
           .from('invitations')
           .update({
             status: InvitationStatus.ACCEPTED,
             updated_at: new Date().toISOString(),
+            registrar_id: registrar.registrar_id,
           })
-          .eq('invitation_id', invitation.invitation_id);
+          .eq('invitation_id', invitation.invitation_id)
+          .select();
 
-        if (updateError) {
+        // Check if any rows were updated
+        if (updateError || !data || data.length === 0) {
           state.rollbackNeeded = true;
           throw new InvitationError(
             InvitationErrorType.SUPABASE_ERROR,
-            `Failed to update invitation status: ${updateError.message}`,
-            500,
-            updateError,
+            'Failed to update invitation status - No permission to update this invitation',
+            403,
+            updateError || new Error('No rows updated due to RLS policy'),
           );
         }
 

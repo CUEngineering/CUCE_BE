@@ -18,6 +18,12 @@ import { UpdateRegistrarDto } from '../dto/update-registrar.dto';
 import { InvitationResponse } from '../interfaces/invitation.interface';
 import { Request } from 'express';
 
+import {
+  Registrar,
+  RegistrarResponse,
+  RegistrarStats,
+} from '../types/registrar.types';
+
 interface InvitationResult {
   email: string;
   success: boolean;
@@ -37,7 +43,7 @@ export class RegistrarsController {
 
   @Get(':id')
   async findOne(
-    @Param('id') id: string,
+    @Param('id') id: number,
     @Req() req: Request & { accessToken: string },
   ) {
     return this.registrarsService.findOne(id, req.accessToken);
@@ -45,7 +51,7 @@ export class RegistrarsController {
 
   @Patch(':id')
   async update(
-    @Param('id') id: string,
+    @Param('id') id: number,
     @Body() updateRegistrarDto: UpdateRegistrarDto,
     @Req() req: Request & { accessToken: string },
   ) {
@@ -59,7 +65,7 @@ export class RegistrarsController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(
-    @Param('id') id: string,
+    @Param('id') id: number,
     @Req() req: Request & { accessToken: string },
   ) {
     return this.registrarsService.remove(id, req.accessToken);
@@ -101,7 +107,7 @@ export class RegistrarsController {
 
   @Post(':id/suspend')
   async suspendRegistrar(
-    @Param('id') id: string,
+    @Param('id') id: number,
     @Req() req: Request & { accessToken: string },
   ) {
     return this.registrarsService.suspend(id, req.accessToken);
@@ -109,7 +115,7 @@ export class RegistrarsController {
 
   @Post(':id/unsuspend')
   async unsuspendRegistrar(
-    @Param('id') id: string,
+    @Param('id') id: number,
     @Req() req: Request & { accessToken: string },
   ) {
     return this.registrarsService.liftSuspension(id, req.accessToken);
@@ -117,7 +123,7 @@ export class RegistrarsController {
 
   @Get(':id/stats')
   async getRegistrarStats(
-    @Param('id') id: string,
+    @Param('id') id: number,
     @Req() req: Request & { accessToken: string },
   ) {
     return this.registrarsService.getRegistrarStats(id, req.accessToken);

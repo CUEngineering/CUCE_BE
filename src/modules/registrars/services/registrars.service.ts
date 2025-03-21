@@ -3,21 +3,21 @@ import {
   NotFoundException,
   InternalServerErrorException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { SupabaseService } from '../../../supabase/supabase.service';
-import { CreateRegistrarDto } from '../dto/create-registrar.dto';
 import { UpdateRegistrarDto } from '../dto/update-registrar.dto';
 import {
   Invitation,
   InvitationResponse,
 } from '../interfaces/invitation.interface';
 import { randomUUID } from 'crypto';
-
-interface Enrollment {
-  enrollment_id: string;
-  enrollment_status: string;
-  session_id: string;
-}
+import {
+  Registrar,
+  Enrollment,
+  RegistrarStats,
+  RegistrarResponse,
+} from '../types/registrar.types';
 
 function safeUuidv4(): string {
   try {
@@ -33,20 +33,42 @@ interface EmailDto {
 
 @Injectable()
 export class RegistrarsService {
+  private readonly logger = new Logger(RegistrarsService.name);
+
   constructor(private readonly supabaseService: SupabaseService) {}
 
-  async findAll(accessToken: string) {
-    return this.supabaseService.select(accessToken, 'registrars', {});
+  async findAll(accessToken: string): Promise<Registrar[]> {
+    const result = (await this.supabaseService.select(
+      accessToken,
+      'registrars',
+      {},
+    )) as unknown as Registrar[];
+
+    // Get stats for each registrar
+    const registrarsWithStats = await Promise.all(
+      result.map(async (registrar) => {
+        const stats = await this.getRegistrarStats(
+          registrar.registrar_id,
+          accessToken,
+        );
+        return {
+          ...registrar,
+          stats,
+        };
+      }),
+    );
+
+    return registrarsWithStats;
   }
 
-  async findOne(registrar_id: string, accessToken: string) {
-    const result = await this.supabaseService.select(
+  async findOne(registrar_id: number, accessToken: string): Promise<Registrar> {
+    const result = (await this.supabaseService.select(
       accessToken,
       'registrars',
       {
         filter: { registrar_id },
       },
-    );
+    )) as unknown as Registrar[];
 
     if (!result || result.length === 0) {
       throw new NotFoundException(
@@ -57,25 +79,17 @@ export class RegistrarsService {
     return result[0];
   }
 
-  async create(createRegistrarDto: CreateRegistrarDto, accessToken: string) {
-    const id = safeUuidv4();
-    return this.supabaseService.insert(accessToken, 'registrars', {
-      ...createRegistrarDto,
-      registrar_id: id,
-    });
-  }
-
   async update(
-    registrar_id: string,
+    registrar_id: number,
     updateRegistrarDto: UpdateRegistrarDto,
     accessToken: string,
-  ) {
-    const result = await this.supabaseService.update(
+  ): Promise<Registrar> {
+    const result = (await this.supabaseService.update(
       accessToken,
       'registrars',
       { registrar_id },
       updateRegistrarDto,
-    );
+    )) as unknown as Registrar[];
 
     if (!result || result.length === 0) {
       throw new NotFoundException(
@@ -86,7 +100,10 @@ export class RegistrarsService {
     return result[0];
   }
 
-  async remove(registrar_id: string, accessToken: string) {
+  async remove(
+    registrar_id: number,
+    accessToken: string,
+  ): Promise<RegistrarResponse> {
     const result = await this.supabaseService.delete(
       accessToken,
       'registrars',
@@ -130,7 +147,6 @@ export class RegistrarsService {
     }
 
     // Generate safe UUIDs
-    const invitation_id = safeUuidv4();
     const token = safeUuidv4();
 
     // Create new invitation
@@ -138,12 +154,12 @@ export class RegistrarsService {
       accessToken,
       'invitations',
       {
-        invitation_id,
         email,
         token,
         user_type: 'REGISTRAR',
         status: 'PENDING',
         expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+        updated_at: new Date().toISOString(),
       },
     )) as unknown as Invitation[];
 
@@ -154,49 +170,117 @@ export class RegistrarsService {
     };
   }
 
-  async suspend(registrar_id: string, accessToken: string) {
-    const result = await this.supabaseService.update(
-      accessToken,
-      'registrars',
-      { registrar_id },
-      { is_suspended: true },
-    );
+  async suspend(
+    registrar_id: number,
+    accessToken: string,
+  ): Promise<RegistrarResponse> {
+    try {
+      // First check if registrar exists and current state
+      const registrar = await this.findOne(registrar_id, accessToken);
 
-    if (!result || result.length === 0) {
-      throw new NotFoundException(
-        `Registrar with ID ${registrar_id} not found`,
+      if (registrar.is_suspended) {
+        throw new BadRequestException('Registrar is already suspended');
+      }
+
+      const result = (await this.supabaseService.update(
+        accessToken,
+        'registrars',
+        { registrar_id },
+        {
+          is_suspended: true,
+          suspended_at: new Date().toISOString(),
+        },
+      )) as unknown as Registrar[];
+
+      if (!result || result.length === 0) {
+        throw new NotFoundException(
+          `Registrar with ID ${registrar_id} not found`,
+        );
+      }
+
+      return {
+        success: true,
+        message: 'Registrar suspended successfully',
+        registrar: result[0],
+      };
+    } catch (error) {
+      // Rethrow known NestJS exceptions
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+
+      // Log unexpected errors
+      this.logger.error(
+        `Error suspending registrar ${registrar_id}: ${error.message}`,
+        error.stack,
       );
-    }
 
-    return {
-      success: true,
-      message: 'Registrar suspended successfully',
-      registrar: result[0],
-    };
+      // Handle unexpected errors
+      throw new InternalServerErrorException('Failed to suspend registrar');
+    }
   }
 
-  async liftSuspension(registrar_id: string, accessToken: string) {
-    const result = await this.supabaseService.update(
-      accessToken,
-      'registrars',
-      { registrar_id },
-      { is_suspended: false },
-    );
+  async liftSuspension(
+    registrar_id: number,
+    accessToken: string,
+  ): Promise<RegistrarResponse> {
+    try {
+      // First check if registrar exists and current state
+      const registrar = await this.findOne(registrar_id, accessToken);
 
-    if (!result || result.length === 0) {
-      throw new NotFoundException(
-        `Registrar with ID ${registrar_id} not found`,
+      if (!registrar.is_suspended) {
+        throw new BadRequestException('Registrar is not suspended');
+      }
+
+      const result = (await this.supabaseService.update(
+        accessToken,
+        'registrars',
+        { registrar_id },
+        {
+          is_suspended: false,
+        },
+      )) as unknown as Registrar[];
+
+      if (!result || result.length === 0) {
+        throw new NotFoundException(
+          `Registrar with ID ${registrar_id} not found`,
+        );
+      }
+
+      return {
+        success: true,
+        message: 'Registrar suspension lifted successfully',
+        registrar: result[0],
+      };
+    } catch (error) {
+      // Rethrow known NestJS exceptions
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+
+      // Log unexpected errors
+      this.logger.error(
+        `Error lifting suspension for registrar ${registrar_id}: ${error.message}`,
+        error.stack,
+      );
+
+      // Handle unexpected errors
+      throw new InternalServerErrorException(
+        'Failed to lift registrar suspension',
       );
     }
-
-    return {
-      success: true,
-      message: 'Registrar suspension lifted successfully',
-      registrar: result[0],
-    };
   }
 
-  async getRegistrarStats(registrar_id: string, accessToken: string) {
+  async getRegistrarStats(
+    registrar_id: number,
+    accessToken: string,
+  ): Promise<RegistrarStats> {
     // Verify registrar exists
     await this.findOne(registrar_id, accessToken);
 
