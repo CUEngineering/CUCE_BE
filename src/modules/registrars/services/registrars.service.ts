@@ -218,7 +218,6 @@ export class RegistrarsService {
         { registrar_id },
         {
           is_suspended: true,
-          suspended_at: new Date().toISOString(),
         },
       )) as unknown as Registrar[];
 
@@ -249,7 +248,9 @@ export class RegistrarsService {
       );
 
       // Handle unexpected errors
-      throw new InternalServerErrorException('Failed to suspend registrar');
+      throw new InternalServerErrorException(
+        `Failed to suspend registrar: ${error}`,
+      );
     }
   }
 

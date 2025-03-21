@@ -237,6 +237,33 @@ export class SupabaseService {
         throw new UnauthorizedException('Authentication failed');
       }
 
+      // Check if user is a registrar and their status
+      const { data: userRole } = await this.adminClient
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', data.user.id)
+        .single();
+
+      if (userRole?.role === 'REGISTRAR') {
+        const { data: registrar } = await this.adminClient
+          .from('registrars')
+          .select('is_deactivated, is_suspended')
+          .eq('user_id', data.user.id)
+          .single();
+
+        if (registrar?.is_deactivated) {
+          throw new UnauthorizedException(
+            'Your account has been deactivated. Please contact support.',
+          );
+        }
+
+        if (registrar?.is_suspended) {
+          throw new UnauthorizedException(
+            'Your account is currently suspended. Please contact support.',
+          );
+        }
+      }
+
       return {
         user: data.user,
         session: data.session,
@@ -251,7 +278,7 @@ export class SupabaseService {
       }
 
       // Catch any unexpected errors
-      throw new InternalServerErrorException('Login failed');
+      throw new InternalServerErrorException('Sign in failed');
     }
   }
 
