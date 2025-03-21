@@ -332,6 +332,8 @@ export class InvitationsService {
         .insert({
           user_id: userData.user.id,
           role: invitation.user_type,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         })
         .select()
         .single();
@@ -355,11 +357,11 @@ export class InvitationsService {
         const { data: registrar, error: registrarError } = await userClient
           .from('registrars')
           .insert({
-            registrar_id: randomUUID(),
             email: userData.user.email,
             first_name: dto.firstName,
             last_name: dto.lastName,
             user_id: userData.user.id,
+            updated_at: new Date().toISOString(),
           })
           .select()
           .single();
@@ -381,7 +383,10 @@ export class InvitationsService {
         state.currentStep = 'invitationUpdate';
         const { error: updateError } = await userClient
           .from('invitations')
-          .update({ status: InvitationStatus.ACCEPTED })
+          .update({
+            status: InvitationStatus.ACCEPTED,
+            updated_at: new Date().toISOString(),
+          })
           .eq('invitation_id', invitation.invitation_id);
 
         if (updateError) {
@@ -488,7 +493,11 @@ export class InvitationsService {
         const { data, error } = await this.supabaseService
           .getClientWithAuth(accessToken)
           .from('invitations')
-          .update({ token, expires_at })
+          .update({
+            token,
+            expires_at,
+            updated_at: new Date().toISOString(),
+          })
           .eq('invitation_id', invitation_id)
           .select()
           .single();
@@ -579,7 +588,10 @@ export class InvitationsService {
         const { data, error } = await this.supabaseService
           .getClientWithAuth(accessToken)
           .from('invitations')
-          .update({ status: InvitationStatus.CANCELLED })
+          .update({
+            status: InvitationStatus.CANCELLED,
+            updated_at: new Date().toISOString(),
+          })
           .eq('invitation_id', invitation_id)
           .select()
           .single();
@@ -620,7 +632,7 @@ export class InvitationsService {
 
       // Provide a generic error response for unexpected errors
       throw new InternalServerErrorException(
-        `Failed to cancel invitation: An unexpected error occurred`,
+        `Failed to cancel invitation: ${error.message}`,
       );
     }
   }
