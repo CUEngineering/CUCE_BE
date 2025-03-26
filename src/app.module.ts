@@ -12,6 +12,7 @@ import { InvitationsModule } from './modules/invitations/invitations.module';
 import { HealthModule } from './modules/health/health.module';
 import { EnrollmentsModule } from './modules/enrollments/enrollments.module';
 import { SessionsModule } from './modules/sessions/sessions.module';
+import { StudentsModule } from './modules/students/students.module';
 import { PrismaClient } from '@prisma/client';
 
 @Module({
@@ -29,6 +30,7 @@ import { PrismaClient } from '@prisma/client';
     HealthModule,
     EnrollmentsModule,
     SessionsModule,
+    StudentsModule,
   ],
   controllers: [AppController],
   providers: [

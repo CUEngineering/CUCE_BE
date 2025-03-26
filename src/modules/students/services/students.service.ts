@@ -1,0 +1,561 @@
+import {
+  Injectable,
+  NotFoundException,
+  InternalServerErrorException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
+import { SupabaseService } from '../../../supabase/supabase.service';
+import { UpdateStudentDto } from '../dto/update-student.dto';
+import { InviteStudentDto } from '../dto/invite-student.dto';
+import { randomUUID } from 'crypto';
+import {
+  Student,
+  StudentStats,
+  StudentResponse,
+  SessionResponse,
+} from '../types/student.types';
+import { InvitationStatus, UserType, EnrollmentStatus } from '@prisma/client';
+
+function safeUuidv4(): string {
+  try {
+    return randomUUID();
+  } catch {
+    return `fallback-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+  }
+}
+
+@Injectable()
+export class StudentsService {
+  private readonly logger = new Logger(StudentsService.name);
+
+  constructor(private readonly supabaseService: SupabaseService) {}
+
+  async findAll(accessToken: string): Promise<Student[]> {
+    try {
+      const result = (await this.supabaseService.select(
+        accessToken,
+        'students',
+        {
+          columns: '*, program:programs(*)',
+        },
+      )) as unknown as Student[];
+
+      if (!result) {
+        throw new InternalServerErrorException('Failed to fetch students');
+      }
+
+      if (result.length === 0) {
+        throw new NotFoundException('No students found');
+      }
+
+      // Get stats for each student
+      const studentsWithStats = await Promise.all(
+        result.map(async (student) => {
+          try {
+            const stats = await this.getStudentStats(
+              student.student_id,
+              accessToken,
+            );
+            return {
+              ...student,
+              stats,
+            };
+          } catch (error) {
+            this.logger.error(
+              `Error fetching stats for student ${student.student_id}: ${error.message}`,
+              error.stack,
+            );
+            return student; // Return student without stats if stats fetch fails
+          }
+        }),
+      );
+
+      return studentsWithStats;
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error(
+        `Error fetching all students: ${error.message}`,
+        error.stack,
+      );
+      throw new InternalServerErrorException('Failed to fetch students');
+    }
+  }
+
+  async findOne(student_id: number, accessToken: string): Promise<Student> {
+    try {
+      // Get student personal details and program info
+      const result = (await this.supabaseService.select(
+        accessToken,
+        'students',
+        {
+          filter: { student_id },
+          columns:
+            'student_id, reg_number, first_name, last_name, email, profile_picture, program_id, program:programs(program_name, program_type, total_credits)',
+        },
+      )) as unknown as Student[];
+
+      if (!result || result.length === 0) {
+        throw new NotFoundException(`Student with ID ${student_id} not found`);
+      }
+
+      const student = result[0];
+
+      // Get student sessions with courses
+      //   const sessions = await this.getStudentSessions(student_id, accessToken);
+
+      // Get student stats
+      //   const stats = await this.getStudentStats(student_id, accessToken);
+
+      return {
+        ...student,
+        // sessions,
+        // stats,
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error(
+        `Error fetching student ${student_id}: ${error.message}`,
+        error.stack,
+      );
+      throw new InternalServerErrorException('Failed to fetch student');
+    }
+  }
+
+  async update(
+    student_id: number,
+    updateStudentDto: UpdateStudentDto,
+    accessToken: string,
+  ): Promise<Student> {
+    try {
+      // First verify student exists
+      await this.findOne(student_id, accessToken);
+
+      // If email is being updated, check if it's already in use
+      if (updateStudentDto.email) {
+        const existingStudent = (await this.supabaseService.select(
+          accessToken,
+          'students',
+          {
+            filter: {
+              email: updateStudentDto.email,
+              student_id: { not: student_id },
+            },
+          },
+        )) as unknown as Student[];
+
+        if (existingStudent && existingStudent.length > 0) {
+          throw new BadRequestException(
+            `Email ${updateStudentDto.email} is already in use`,
+          );
+        }
+      }
+
+      // If program_id is being updated, verify it exists
+      if (updateStudentDto.program_id) {
+        const program = (await this.supabaseService.select(
+          accessToken,
+          'programs',
+          {
+            filter: { program_id: updateStudentDto.program_id },
+          },
+        )) as unknown as any[];
+
+        if (!program || program.length === 0) {
+          throw new BadRequestException(
+            `Program with ID ${updateStudentDto.program_id} not found`,
+          );
+        }
+      }
+
+      const result = (await this.supabaseService.update(
+        accessToken,
+        'students',
+        { student_id },
+        updateStudentDto,
+      )) as unknown as Student[];
+
+      if (!result || result.length === 0) {
+        throw new NotFoundException(`Student with ID ${student_id} not found`);
+      }
+
+      return result[0];
+    } catch (error) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      this.logger.error(
+        `Error updating student ${student_id}: ${error.message}`,
+        error.stack,
+      );
+      throw new InternalServerErrorException('Failed to update student');
+    }
+  }
+
+  async inviteStudent(
+    inviteDto: InviteStudentDto,
+    accessToken: string,
+  ): Promise<StudentResponse> {
+    let invitationId: number | null = null;
+    try {
+      const { email, reg_number, program_id } = inviteDto;
+
+      // Check if student with this reg_number already exists
+      const existingStudent = (await this.supabaseService.select(
+        accessToken,
+        'students',
+        {
+          filter: { reg_number },
+        },
+      )) as unknown as Student[];
+
+      if (existingStudent && existingStudent.length > 0) {
+        throw new BadRequestException(
+          `A student with registration number ${reg_number} already exists`,
+        );
+      }
+
+      // Check if invitation already exists for this email with PENDING status
+      const existingInvitation = (await this.supabaseService.select(
+        accessToken,
+        'invitations',
+        {
+          filter: {
+            email,
+            status: InvitationStatus.PENDING,
+          },
+        },
+      )) as unknown as any[];
+
+      if (existingInvitation && existingInvitation.length > 0) {
+        throw new BadRequestException(
+          `An invitation for ${email} already exists and is pending`,
+        );
+      }
+
+      // Check if program exists
+      const program = (await this.supabaseService.select(
+        accessToken,
+        'programs',
+        {
+          filter: { program_id },
+        },
+      )) as unknown as any[];
+
+      if (!program || program.length === 0) {
+        throw new BadRequestException(
+          `Program with ID ${program_id} not found`,
+        );
+      }
+
+      // Generate safe UUID for token
+      const token = safeUuidv4();
+
+      // Create new invitation
+      const invitation = (await this.supabaseService.insert(
+        accessToken,
+        'invitations',
+        {
+          email,
+          token,
+          user_type: UserType.STUDENT,
+          status: InvitationStatus.PENDING,
+          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+          updated_at: new Date().toISOString(),
+        },
+      )) as unknown as any[];
+
+      if (!invitation || invitation.length === 0) {
+        throw new InternalServerErrorException('Failed to create invitation');
+      }
+
+      // Store invitation ID for potential rollback
+      invitationId = invitation[0].invitation_id;
+
+      // Create student record with minimal information
+      const student = (await this.supabaseService.insert(
+        accessToken,
+        'students',
+        {
+          reg_number,
+          email,
+          program_id,
+          updated_at: new Date().toISOString(),
+        },
+      )) as unknown as Student[];
+
+      if (!student || student.length === 0) {
+        throw new InternalServerErrorException(
+          'Failed to create student record',
+        );
+      }
+
+      return {
+        success: true,
+        message: `Invitation sent to ${email}`,
+        student: student[0],
+      };
+    } catch (error) {
+      // Attempt rollback if we have an invitation ID
+      if (invitationId) {
+        try {
+          await this.supabaseService.delete(accessToken, 'invitations', {
+            invitation_id: invitationId,
+          });
+        } catch (rollbackError) {
+          // Log the rollback error but don't throw it
+          this.logger.error(
+            `Failed to rollback invitation creation: ${rollbackError.message}`,
+            rollbackError.stack,
+          );
+        }
+      }
+
+      // Rethrow known NestJS exceptions
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+
+      // Log unexpected errors
+      this.logger.error(
+        `Error inviting student: ${error.message}`,
+        error.stack,
+      );
+
+      // Handle unexpected errors
+      throw new InternalServerErrorException(
+        `Failed to invite student: ${error.message}`,
+      );
+    }
+  }
+
+  async getStudentStats(
+    student_id: number,
+    accessToken: string,
+  ): Promise<StudentStats> {
+    try {
+      // Verify student exists
+      await this.findOne(student_id, accessToken);
+
+      // Get all enrollments for this student
+      const enrollments = (await this.supabaseService.select(
+        accessToken,
+        'enrollments',
+        {
+          filter: { student_id },
+        },
+      )) as unknown as any[];
+
+      if (!enrollments) {
+        throw new InternalServerErrorException('Failed to fetch enrollments');
+      }
+
+      // Get active session
+      const activeSession = (await this.supabaseService.select(
+        accessToken,
+        'sessions',
+        {
+          filter: { session_status: 'ACTIVE' },
+          limit: 1,
+        },
+      )) as unknown as any[];
+
+      // Calculate overall stats
+      const enrollmentsByStatus = enrollments.reduce(
+        (acc, enrollment) => {
+          acc[enrollment.enrollment_status] =
+            (acc[enrollment.enrollment_status] || 0) + 1;
+          return acc;
+        },
+        {} as Record<string, number>,
+      );
+
+      // Calculate total credits from approved and completed enrollments
+      const totalCredits = enrollments
+        .filter(
+          (e) =>
+            e.enrollment_status === 'APPROVED' ||
+            e.enrollment_status === 'COMPLETED',
+        )
+        .reduce((acc, enrollment) => acc + enrollment.course.course_credits, 0);
+
+      const stats: StudentStats = {
+        totalEnrollments: enrollments.length,
+        enrollmentsByStatus,
+        totalCredits,
+      };
+
+      // If there's an active session, calculate its stats
+      if (activeSession && activeSession.length > 0) {
+        const sessionEnrollments = enrollments.filter(
+          (e) => e.session_id === activeSession[0].session_id,
+        );
+
+        const sessionEnrollmentsByStatus = sessionEnrollments.reduce(
+          (acc, enrollment) => {
+            acc[enrollment.enrollment_status] =
+              (acc[enrollment.enrollment_status] || 0) + 1;
+            return acc;
+          },
+          {} as Record<string, number>,
+        );
+
+        const sessionTotalCredits = sessionEnrollments
+          .filter(
+            (e) =>
+              e.enrollment_status === 'APPROVED' ||
+              e.enrollment_status === 'COMPLETED',
+          )
+          .reduce(
+            (acc, enrollment) => acc + enrollment.course.course_credits,
+            0,
+          );
+
+        stats.activeSession = {
+          session_id: activeSession[0].session_id,
+          session_name: activeSession[0].session_name,
+          start_date: activeSession[0].start_date,
+          end_date: activeSession[0].end_date,
+          enrollment_deadline: activeSession[0].enrollment_deadline,
+          session_status: activeSession[0].session_status,
+          totalEnrollments: sessionEnrollments.length,
+          enrollmentsByStatus: sessionEnrollmentsByStatus,
+          totalCredits: sessionTotalCredits,
+        };
+      }
+
+      return stats;
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error(
+        `Error fetching stats for student ${student_id}: ${error.message}`,
+        error.stack,
+      );
+      throw new InternalServerErrorException('Failed to fetch student stats');
+    }
+  }
+
+  async getStudentSessions(student_id: number, accessToken: string) {
+    try {
+      // Validate student_id
+      if (!student_id || student_id <= 0) {
+        throw new BadRequestException('Invalid student ID');
+      }
+      // Verify student exists
+      await this.findOne(student_id, accessToken);
+
+      const sessions = await this.fetchStudentSessions(student_id, accessToken);
+
+      // Check if there are any sessions
+      if (!sessions || sessions.length === 0) {
+        throw new NotFoundException(
+          `No sessions found for student ${student_id}`,
+        );
+      }
+
+      return this.formatSessions(sessions, student_id);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error(
+        `Error fetching sessions for student ${student_id}: ${error.message}`,
+        error.stack,
+      );
+      throw new InternalServerErrorException(
+        `Error fetching sessions for student ${student_id}: ${error.message}`,
+      );
+    }
+  }
+
+  private async fetchStudentSessions(
+    student_id: number,
+    accessToken: string,
+  ): Promise<SessionResponse[]> {
+    const sessions = await this.supabaseService.select(
+      accessToken,
+      'session_students',
+      {
+        filter: { student_id },
+        columns: `
+          session:sessions(
+            session_id,
+            session_name,
+            start_date,
+            end_date,
+            enrollment_deadline,
+            session_status,
+            enrollments(
+              enrollment_id,
+              enrollment_status,
+              special_request,
+              rejection_reason,
+              student_id,
+              courses(
+                course_id,
+                course_title,
+                course_code,
+                course_credits,
+                course_type,
+                default_capacity,
+                course_desc
+              )
+            )
+          )
+        `,
+      },
+    );
+
+    if (
+      !sessions ||
+      (Array.isArray(sessions) && sessions.some((item) => 'error' in item))
+    ) {
+      throw new InternalServerErrorException('Failed to fetch sessions');
+    }
+
+    return sessions as unknown as SessionResponse[];
+  }
+
+  private getStudentEnrollments(
+    enrollments: SessionResponse['session']['enrollments'],
+    student_id: number,
+  ) {
+    return enrollments
+      .filter((enrollment) => enrollment.student_id === student_id)
+      .map((enrollment) => ({
+        enrollment_id: enrollment.enrollment_id,
+        enrollment_status: enrollment.enrollment_status as EnrollmentStatus,
+        special_request: enrollment.special_request,
+        rejection_reason: enrollment.rejection_reason,
+        ...enrollment.courses,
+        student_id: enrollment.student_id,
+      }));
+  }
+
+  private formatSessions(sessions: SessionResponse[], student_id: number) {
+    return sessions.map((item) => ({
+      session_id: item.session.session_id,
+      session_name: item.session.session_name,
+      start_date: new Date(item.session.start_date),
+      end_date: new Date(item.session.end_date),
+      enrollment_deadline: new Date(item.session.enrollment_deadline),
+      session_status: item.session.session_status,
+      enrollments: this.getStudentEnrollments(
+        item.session.enrollments,
+        student_id,
+      ),
+    }));
+  }
+}

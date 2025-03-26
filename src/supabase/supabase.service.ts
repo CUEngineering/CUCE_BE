@@ -237,13 +237,14 @@ export class SupabaseService {
         throw new UnauthorizedException('Authentication failed');
       }
 
-      // Check if user is a registrar and their status
+      // Get user's role
       const { data: userRole } = await this.adminClient
         .from('user_roles')
         .select('role')
         .eq('user_id', data.user.id)
         .single();
 
+      // Check if user is a registrar and their status
       if (userRole?.role === 'REGISTRAR') {
         const { data: registrar } = await this.adminClient
           .from('registrars')
@@ -267,6 +268,7 @@ export class SupabaseService {
       return {
         user: data.user,
         session: data.session,
+        role: userRole?.role || 'NULL', // Include role in response, default to 'USER' if not found
       };
     } catch (error) {
       // Rethrow known exceptions
