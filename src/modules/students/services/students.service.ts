@@ -4,6 +4,7 @@ import {
   InternalServerErrorException,
   BadRequestException,
   Logger,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { SupabaseService } from '../../../supabase/supabase.service';
 import { UpdateStudentDto } from '../dto/update-student.dto';
@@ -33,47 +34,62 @@ export class StudentsService {
 
   async findAll(accessToken: string): Promise<Student[]> {
     try {
+      // First verify the access token is valid
+      if (!accessToken) {
+        throw new UnauthorizedException('Access token is required');
+      }
+
       const result = (await this.supabaseService.select(
         accessToken,
         'students',
         {
-          columns: '*, program:programs(*)',
+          columns: `
+            student_id,
+            reg_number,
+            first_name,
+            last_name,
+            email,
+            profile_picture,
+            program_id,
+            program:programs(
+              program_name,
+              program_type,
+              total_credits
+            )
+          `,
         },
       )) as unknown as Student[];
 
       if (!result) {
-        throw new InternalServerErrorException('Failed to fetch students');
+        this.logger.warn('No students found in the database');
+        return [];
       }
 
-      if (result.length === 0) {
-        throw new NotFoundException('No students found');
-      }
+      //   // Get stats for each student
+      //   const studentsWithStats = await Promise.all(
+      //     result.map(async (student) => {
+      //       try {
+      //         const stats = await this.getStudentStats(
+      //           student.student_id,
+      //           accessToken,
+      //         );
+      //         return {
+      //           ...student,
+      //           stats,
+      //         };
+      //       } catch (error) {
+      //         this.logger.error(
+      //           `Error fetching stats for student ${student.student_id}: ${error.message}`,
+      //           error.stack,
+      //         );
+      //         return student; // Return student without stats if stats fetch fails
+      //       }
+      //     }),
+      //   );
 
-      // Get stats for each student
-      const studentsWithStats = await Promise.all(
-        result.map(async (student) => {
-          try {
-            const stats = await this.getStudentStats(
-              student.student_id,
-              accessToken,
-            );
-            return {
-              ...student,
-              stats,
-            };
-          } catch (error) {
-            this.logger.error(
-              `Error fetching stats for student ${student.student_id}: ${error.message}`,
-              error.stack,
-            );
-            return student; // Return student without stats if stats fetch fails
-          }
-        }),
-      );
-
-      return studentsWithStats;
+      return result;
     } catch (error) {
-      if (error instanceof NotFoundException) {
+      if (error instanceof UnauthorizedException) {
         throw error;
       }
       this.logger.error(
@@ -344,31 +360,65 @@ export class StudentsService {
     accessToken: string,
   ): Promise<StudentStats> {
     try {
-      // Verify student exists
-      await this.findOne(student_id, accessToken);
-
-      // Get all enrollments for this student
+      // Get all enrollments for this student with course data in a single query
       const enrollments = (await this.supabaseService.select(
         accessToken,
         'enrollments',
         {
           filter: { student_id },
+          columns: `
+            enrollment_id,
+            enrollment_status,
+            session_id,
+            course:courses(
+              course_id,
+              course_credits
+            )
+          `,
         },
-      )) as unknown as any[];
+      )) as unknown as Array<{
+        enrollment_id: number;
+        enrollment_status: EnrollmentStatus;
+        session_id: number;
+        course: {
+          course_id: number;
+          course_credits: number;
+        };
+      }>;
 
       if (!enrollments) {
-        throw new InternalServerErrorException('Failed to fetch enrollments');
+        this.logger.warn(`No enrollments found for student ${student_id}`);
+        return {
+          totalEnrollments: 0,
+          enrollmentsByStatus: {} as Record<EnrollmentStatus, number>,
+          totalCredits: 0,
+        };
       }
 
-      // Get active session
+      // Get active session in the same query
       const activeSession = (await this.supabaseService.select(
         accessToken,
         'sessions',
         {
           filter: { session_status: 'ACTIVE' },
+          columns: `
+            session_id,
+            session_name,
+            start_date,
+            end_date,
+            enrollment_deadline,
+            session_status
+          `,
           limit: 1,
         },
-      )) as unknown as any[];
+      )) as unknown as Array<{
+        session_id: number;
+        session_name: string;
+        start_date: string;
+        end_date: string;
+        enrollment_deadline: string;
+        session_status: string;
+      }>;
 
       // Calculate overall stats
       const enrollmentsByStatus = enrollments.reduce(
@@ -377,7 +427,7 @@ export class StudentsService {
             (acc[enrollment.enrollment_status] || 0) + 1;
           return acc;
         },
-        {} as Record<string, number>,
+        {} as Record<EnrollmentStatus, number>,
       );
 
       // Calculate total credits from approved and completed enrollments
@@ -407,7 +457,7 @@ export class StudentsService {
               (acc[enrollment.enrollment_status] || 0) + 1;
             return acc;
           },
-          {} as Record<string, number>,
+          {} as Record<EnrollmentStatus, number>,
         );
 
         const sessionTotalCredits = sessionEnrollments
@@ -424,9 +474,9 @@ export class StudentsService {
         stats.activeSession = {
           session_id: activeSession[0].session_id,
           session_name: activeSession[0].session_name,
-          start_date: activeSession[0].start_date,
-          end_date: activeSession[0].end_date,
-          enrollment_deadline: activeSession[0].enrollment_deadline,
+          start_date: new Date(activeSession[0].start_date),
+          end_date: new Date(activeSession[0].end_date),
+          enrollment_deadline: new Date(activeSession[0].enrollment_deadline),
           session_status: activeSession[0].session_status,
           totalEnrollments: sessionEnrollments.length,
           enrollmentsByStatus: sessionEnrollmentsByStatus,
@@ -436,9 +486,6 @@ export class StudentsService {
 
       return stats;
     } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
       this.logger.error(
         `Error fetching stats for student ${student_id}: ${error.message}`,
         error.stack,
