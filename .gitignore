@@ -41,6 +41,7 @@ prisma/.env
 
 # Documentation
 /postman
+/requirements
 
 # misc
 /.sass-cache
