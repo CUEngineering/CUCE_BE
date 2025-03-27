@@ -192,7 +192,7 @@ export class ProgramService {
         }),
       ) as ProgramCourse[];
 
-      // Add hasEnrollments flag to each course
+      // Add hasEnrollments flag and total_enrollments to each course
       const coursesWithEnrollmentStatus = await Promise.all(
         programCourses.map(async (pc) => {
           try {
@@ -201,15 +201,54 @@ export class ProgramService {
               pc.course_id,
               accessToken,
             );
+
+            // Get total enrollments for active/approved/completed statuses
+            const students = await this.supabaseService.select(
+              accessToken,
+              'students',
+              {
+                filter: { program_id: id },
+              },
+            );
+
+            if (!students || !Array.isArray(students)) {
+              return {
+                ...pc,
+                hasEnrollments,
+                total_enrollments: 0,
+              };
+            }
+
+            const studentIds = (students as unknown as Student[]).map(
+              (student) => student.student_id,
+            );
+
+            const enrollments = await this.supabaseService.select(
+              accessToken,
+              'enrollments',
+              {
+                filter: {
+                  course_id: pc.course_id,
+                  student_id: studentIds,
+                  enrollment_status: ['APPROVED', 'ACTIVE', 'COMPLETED'],
+                },
+              },
+            );
+
             return {
               ...pc,
               hasEnrollments,
+              total_enrollments:
+                enrollments && Array.isArray(enrollments)
+                  ? enrollments.length
+                  : 0,
             };
           } catch (error) {
             // If we can't check enrollments for a course, mark it as having enrollments to be safe
             return {
               ...pc,
               hasEnrollments: true,
+              total_enrollments: 0,
             };
           }
         }),
