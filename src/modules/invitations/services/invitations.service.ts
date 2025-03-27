@@ -351,7 +351,7 @@ export class InvitationsService {
       state.steps.roleAssignment = { success: true, data: roleData };
       state.rollbackSteps.push('roleAssignment');
 
-      // Step 4: Create Profile
+      // Step 4: Profile Creation
       state.currentStep = 'profileCreation';
       if (invitation.user_type === 'REGISTRAR') {
         const { data: registrar, error: registrarError } = await userClient
@@ -379,7 +379,7 @@ export class InvitationsService {
         state.steps.profileCreation = { success: true, data: registrar };
         state.rollbackSteps.push('profileCreation');
 
-        // Step 5: Update Invitation Status
+        // Step 5: Update Invitation Status for Registrar
         state.currentStep = 'invitationUpdate';
         const { data, error: updateError } = await userClient
           .from('invitations')
@@ -417,6 +417,90 @@ export class InvitationsService {
             refresh_token: userData.session.refresh_token,
           },
           registrar,
+          acceptanceState: state,
+        };
+      } else if (invitation.user_type === 'STUDENT') {
+        // Find existing student record
+        const { data: student, error: studentError } = await userClient
+          .from('students')
+          .select()
+          .eq('email', invitation.email)
+          .single();
+
+        if (studentError || !student) {
+          state.rollbackNeeded = true;
+          throw new InvitationError(
+            InvitationErrorType.SUPABASE_ERROR,
+            'Student record not found',
+            404,
+            studentError,
+          );
+        }
+
+        // Update student record with user details
+        const { data: updatedStudent, error: updateStudentError } =
+          await userClient
+            .from('students')
+            .update({
+              first_name: dto.firstName,
+              last_name: dto.lastName,
+              user_id: userData.user.id,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('student_id', student.student_id)
+            .select()
+            .single();
+
+        if (updateStudentError) {
+          state.rollbackNeeded = true;
+          throw new InvitationError(
+            InvitationErrorType.SUPABASE_ERROR,
+            `Failed to update student profile: ${updateStudentError.message}`,
+            500,
+            updateStudentError,
+          );
+        }
+
+        state.steps.profileCreation = { success: true, data: updatedStudent };
+        state.rollbackSteps.push('profileCreation');
+
+        // Step 5: Update Invitation Status for Student
+        state.currentStep = 'invitationUpdate';
+        const { data, error: updateError } = await userClient
+          .from('invitations')
+          .update({
+            status: InvitationStatus.ACCEPTED,
+            updated_at: new Date().toISOString(),
+            student_id: updatedStudent.student_id,
+          })
+          .eq('invitation_id', invitation.invitation_id)
+          .select();
+
+        if (updateError || !data || data.length === 0) {
+          state.rollbackNeeded = true;
+          throw new InvitationError(
+            InvitationErrorType.SUPABASE_ERROR,
+            'Failed to update invitation status - No permission to update this invitation',
+            403,
+            updateError || new Error('No rows updated due to RLS policy'),
+          );
+        }
+
+        state.steps.invitationUpdate = { success: true };
+
+        return {
+          user: {
+            id: userData.user.id,
+            email: userData.user.email,
+            first_name: dto.firstName,
+            last_name: dto.lastName,
+            role: invitation.user_type,
+          },
+          session: {
+            access_token: userData.session.access_token,
+            refresh_token: userData.session.refresh_token,
+          },
+          student: updatedStudent,
           acceptanceState: state,
         };
       } else {

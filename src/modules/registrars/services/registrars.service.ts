@@ -335,6 +335,14 @@ export class RegistrarsService {
       (e) => e.enrollment_status === 'COMPLETED',
     );
 
+    const approvedEnrollments = enrollments.filter(
+      (e) => e.enrollment_status === 'APPROVED',
+    );
+
+    const rejectedEnrollments = enrollments.filter(
+      (e) => e.enrollment_status === 'REJECTED',
+    );
+
     const cancelledEnrollments = enrollments.filter(
       (e) => e.enrollment_status === 'CANCELLED',
     );
@@ -345,6 +353,8 @@ export class RegistrarsService {
       activeEnrollments: activeEnrollments.length,
       completedEnrollments: completedEnrollments.length,
       cancelledEnrollments: cancelledEnrollments.length,
+      approvedEnrollments: approvedEnrollments.length,
+      rejectedEnrollments: rejectedEnrollments.length,
     };
   }
 }

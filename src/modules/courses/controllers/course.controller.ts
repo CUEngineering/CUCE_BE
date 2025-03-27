@@ -5,6 +5,7 @@ import {
   Param,
   Post,
   Patch,
+  Delete,
   UseGuards,
   Req,
 } from '@nestjs/common';
@@ -13,6 +14,7 @@ import { CreateCourseDto } from '../dto/create-course.dto';
 import { UpdateCourseDto } from '../dto/update-course.dto';
 import { AuthGuard } from '../../../supabase/auth.guard';
 import { Request } from 'express';
+import { EnrolledStudent } from '../types/course.types';
 
 @Controller('courses')
 @UseGuards(AuthGuard) // Apply authentication guard to all endpoints
@@ -47,5 +49,37 @@ export class CourseController {
     @Req() req: Request & { accessToken: string },
   ) {
     return this.courseService.update(id, updateCourseDto, req.accessToken);
+  }
+
+  @Delete(':id')
+  async delete(
+    @Param('id') id: string,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.courseService.delete(id, req.accessToken);
+  }
+
+  @Get(':id/programs')
+  async getAffiliatedPrograms(
+    @Param('id') id: string,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.courseService.getAffiliatedPrograms(id, req.accessToken);
+  }
+
+  @Get(':id/sessions')
+  async getAffiliatedSessions(
+    @Param('id') id: string,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.courseService.getAffiliatedSessions(id, req.accessToken);
+  }
+
+  @Get(':id/students')
+  async getEnrolledStudents(
+    @Param('id') id: string,
+    @Req() req: Request & { accessToken: string },
+  ): Promise<EnrolledStudent[]> {
+    return this.courseService.getEnrolledStudents(id, req.accessToken);
   }
 }

@@ -65,8 +65,8 @@ model program_courses {
   course_id  Int
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
-  course     courses  @relation(fields: [course_id], references: [course_id], onDelete: Restrict, onUpdate: Cascade)
-  program    programs @relation(fields: [program_id], references: [program_id], onDelete: Restrict, onUpdate: Cascade)
+  course     courses  @relation(fields: [course_id], references: [course_id], onDelete: Cascade, onUpdate: Cascade)
+  program    programs @relation(fields: [program_id], references: [program_id], onDelete: Cascade, onUpdate: Cascade)
 
   @@id([program_id, course_id])
 }
@@ -104,8 +104,8 @@ model session_courses {
   adjusted_capacity Int
   created_at        DateTime        @default(now())
   updated_at        DateTime        @updatedAt
-  course            courses         @relation(fields: [course_id], references: [course_id], onDelete: Restrict, onUpdate: Cascade)
-  session           sessions        @relation(fields: [session_id], references: [session_id], onDelete: Restrict, onUpdate: Cascade)
+  course            courses         @relation(fields: [course_id], references: [course_id], onDelete: Cascade, onUpdate: Cascade)
+  session           sessions        @relation(fields: [session_id], references: [session_id], onDelete: Cascade, onUpdate: Cascade)
 
   @@id([session_id, course_id])
 }

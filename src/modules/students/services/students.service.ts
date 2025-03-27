@@ -435,6 +435,7 @@ export class StudentsService {
         .filter(
           (e) =>
             e.enrollment_status === 'APPROVED' ||
+            e.enrollment_status === 'ACTIVE' ||
             e.enrollment_status === 'COMPLETED',
         )
         .reduce((acc, enrollment) => acc + enrollment.course.course_credits, 0);

@@ -19,6 +19,8 @@ export interface Enrollment {
 export interface RegistrarStats {
   totalSessions: number;
   totalEnrollments: number;
+  approvedEnrollments: number;
+  rejectedEnrollments: number;
   activeEnrollments: number;
   completedEnrollments: number;
   cancelledEnrollments: number;

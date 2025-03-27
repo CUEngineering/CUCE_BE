@@ -1,8 +1,14 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { CreateCourseDto } from '../dto/create-course.dto';
 import { UpdateCourseDto } from '../dto/update-course.dto';
 import { SupabaseService } from '../../../supabase/supabase.service';
 import { CourseType } from '../dto/create-course.dto';
+import { EnrolledStudent, SupabaseEnrollment } from '../types/course.types';
 
 @Injectable()
 export class CourseService {
@@ -39,7 +45,53 @@ export class CourseService {
   }
 
   async findAll(accessToken: string) {
-    return this.supabaseService.select(accessToken, 'courses', {});
+    // Get all courses with their enrollments and program associations
+    const { data: courses, error } = await this.supabaseService
+      .getClientWithAuth(accessToken)
+      .from('courses').select(`
+        *,
+        enrollments (
+          student_id,
+          enrollment_status
+        ),
+        program_courses (
+          program_id
+        )
+      `);
+
+    if (error) {
+      throw new Error(`Failed to fetch courses: ${error.message}`);
+    }
+
+    // Process each course to calculate unique stats
+    const processedCourses = courses.map((course) => {
+      // Get unique student IDs from approved, active, or completed enrollments
+      const uniqueEnrolledStudents = new Set(
+        (course.enrollments || [])
+          .filter((enrollment) =>
+            ['APPROVED', 'ACTIVE', 'COMPLETED'].includes(
+              enrollment.enrollment_status,
+            ),
+          )
+          .map((enrollment) => enrollment.student_id),
+      );
+
+      // Get unique program IDs
+      const uniquePrograms = new Set(
+        (course.program_courses || []).map((pc) => pc.program_id),
+      );
+
+      // Remove the raw arrays from the response
+      const { enrollments, program_courses, ...courseData } = course;
+
+      return {
+        ...courseData,
+        total_enrolled_students: uniqueEnrolledStudents.size,
+        total_programs: uniquePrograms.size,
+      };
+    });
+
+    return processedCourses;
   }
 
   async findOne(id: string, accessToken: string) {
@@ -78,6 +130,194 @@ export class CourseService {
       'courses',
       { course_id: id },
       updateData,
+    );
+  }
+
+  async delete(id: string, accessToken: string) {
+    // First check if course exists
+    await this.findOne(id, accessToken);
+
+    // Check if course has any enrollments
+    const { data: enrollments, error: enrollmentError } =
+      await this.supabaseService
+        .getClientWithAuth(accessToken)
+        .from('enrollments')
+        .select('enrollment_id')
+        .eq('course_id', id)
+        .limit(1);
+
+    if (enrollmentError) {
+      throw new InternalServerErrorException(
+        `Failed to check course enrollments: ${enrollmentError.message}`,
+      );
+    }
+
+    if (enrollments && enrollments.length > 0) {
+      throw new BadRequestException(
+        'Cannot delete course with existing enrollments',
+      );
+    }
+
+    // If no enrollments exist, proceed with deletion
+    const { error: deleteError } = await this.supabaseService
+      .getClientWithAuth(accessToken)
+      .from('courses')
+      .delete()
+      .eq('course_id', id);
+
+    if (deleteError) {
+      throw new InternalServerErrorException(
+        `Failed to delete course: ${deleteError.message}`,
+      );
+    }
+
+    return {
+      success: true,
+      message: `Course with ID ${id} has been deleted successfully`,
+    };
+  }
+
+  async getAffiliatedPrograms(id: string, accessToken: string) {
+    // First check if course exists
+    await this.findOne(id, accessToken);
+
+    // Get all programs associated with this course
+    const { data: programs, error } = await this.supabaseService
+      .getClientWithAuth(accessToken)
+      .from('program_courses')
+      .select(
+        `
+        program:programs (
+          program_id,
+          program_name,
+          program_type,
+          total_credits
+        )
+      `,
+      )
+      .eq('course_id', id);
+
+    if (error) {
+      throw new InternalServerErrorException(
+        `Failed to fetch affiliated programs: ${error.message}`,
+      );
+    }
+
+    if (!programs || programs.length === 0) {
+      throw new NotFoundException(`No programs found for course with ID ${id}`);
+    }
+
+    // Extract and format the program data
+    return programs.map((pc) => pc.program);
+  }
+
+  async getAffiliatedSessions(id: string, accessToken: string) {
+    // First check if course exists
+    await this.findOne(id, accessToken);
+
+    // Get all sessions associated with this course
+    const { data: sessions, error } = await this.supabaseService
+      .getClientWithAuth(accessToken)
+      .from('session_courses')
+      .select(
+        `
+        session:sessions (
+          session_id,
+          session_name,
+          start_date,
+          end_date,
+          enrollment_deadline,
+          session_status
+        ),
+        status,
+        adjusted_capacity
+      `,
+      )
+      .eq('course_id', id);
+
+    if (error) {
+      throw new InternalServerErrorException(
+        `Failed to fetch affiliated sessions: ${error.message}`,
+      );
+    }
+
+    if (!sessions || sessions.length === 0) {
+      throw new NotFoundException(`No sessions found for course with ID ${id}`);
+    }
+
+    // Extract and format the session data
+    return sessions.map((sc) => ({
+      ...sc.session,
+      course_status: sc.status,
+      adjusted_capacity: sc.adjusted_capacity,
+    }));
+  }
+
+  async getEnrolledStudents(
+    id: string,
+    accessToken: string,
+  ): Promise<EnrolledStudent[]> {
+    // First check if course exists
+    await this.findOne(id, accessToken);
+
+    // Get all students enrolled in this course with approved, active, or completed status
+    const { data: enrollments, error } = await this.supabaseService
+      .getClientWithAuth(accessToken)
+      .from('enrollments')
+      .select(
+        `
+        student:students (
+          student_id,
+          reg_number,
+          first_name,
+          last_name,
+          email,
+          program:programs (
+            program_id,
+            program_name,
+            program_type
+          )
+        ),
+        enrollment_status,
+        special_request,
+        rejection_reason,
+        created_at
+      `,
+      )
+      .eq('course_id', id)
+      .in('enrollment_status', ['APPROVED', 'ACTIVE', 'COMPLETED'])
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw new InternalServerErrorException(
+        `Failed to fetch enrolled students: ${error.message}`,
+      );
+    }
+
+    if (!enrollments || enrollments.length === 0) {
+      throw new NotFoundException(
+        `No enrolled students found for course with ID ${id}`,
+      );
+    }
+
+    // Format the response to include both student and enrollment information
+    return (enrollments as unknown as SupabaseEnrollment[]).map(
+      (enrollment) => ({
+        student: {
+          id: enrollment.student.student_id,
+          reg_number: enrollment.student.reg_number,
+          first_name: enrollment.student.first_name,
+          last_name: enrollment.student.last_name,
+          email: enrollment.student.email,
+          program: enrollment.student.program,
+        },
+        enrollment: {
+          status: enrollment.enrollment_status,
+          special_request: enrollment.special_request,
+          rejection_reason: enrollment.rejection_reason,
+          enrolled_at: enrollment.created_at,
+        },
+      }),
     );
   }
 }

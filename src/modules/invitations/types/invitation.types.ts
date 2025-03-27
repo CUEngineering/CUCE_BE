@@ -51,5 +51,14 @@ export interface AcceptanceResult {
     last_name: string;
     user_id: string;
   };
+  student?: {
+    student_id: number;
+    reg_number: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+    program_id: number;
+    user_id: string;
+  };
   acceptanceState?: AcceptanceState;
 }

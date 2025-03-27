@@ -276,6 +276,7 @@ export class ProgramService {
           .filter(
             (e) =>
               e.enrollment_status === 'APPROVED' ||
+              e.enrollment_status === 'ACTIVE' ||
               e.enrollment_status === 'COMPLETED',
           )
           .reduce(
