@@ -1,4 +1,5 @@
 import { IsEnum, IsInt, IsNotEmpty, IsString, Min } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 // Define CourseType enum here since we can't import it directly
 export enum CourseType {
@@ -22,13 +23,10 @@ export class CreateCourseDto {
   course_credits: number;
 
   @IsEnum(CourseType)
+  @Transform(({ value }) => value?.toUpperCase())
   course_type: CourseType;
 
-  @IsInt()
-  @Min(1)
-  default_capacity: number;
-
-  @IsString()
-  @IsNotEmpty()
-  course_desc: string;
+  // @IsString()
+  // @IsNotEmpty()
+  // course_desc: string;
 }

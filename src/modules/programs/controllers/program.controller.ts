@@ -4,11 +4,13 @@ import {
   Get,
   Param,
   Post,
+  Delete,
   UseGuards,
   Req,
 } from '@nestjs/common';
 import { ProgramService } from '../services/program.service';
 import { CreateProgramDto } from '../dto/create-program.dto';
+import { AddCoursesToProgramDto } from '../dto/add-courses-to-program.dto';
 import { AuthGuard } from '../../../supabase/auth.guard';
 import { Request } from 'express';
 
@@ -52,5 +54,23 @@ export class ProgramController {
     @Req() req: Request & { accessToken: string },
   ) {
     return this.programService.getProgramStudents(id, req.accessToken);
+  }
+
+  @Post(':id/courses')
+  async addCourses(
+    @Param('id') id: string,
+    @Body() addCoursesDto: AddCoursesToProgramDto,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.programService.addCourses(id, addCoursesDto, req.accessToken);
+  }
+
+  @Delete(':id/courses/:courseId')
+  async removeCourse(
+    @Param('id') id: string,
+    @Param('courseId') courseId: string,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.programService.removeCourse(id, courseId, req.accessToken);
   }
 }

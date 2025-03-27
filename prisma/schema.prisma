@@ -16,7 +16,7 @@ model courses {
   course_credits   Int
   course_type      CourseType
   default_capacity Int
-  course_desc      String
+  course_desc      String?
   created_at       DateTime           @default(now())
   updated_at       DateTime           @updatedAt
   enrollments      enrollments[]

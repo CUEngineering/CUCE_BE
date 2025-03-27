@@ -4,11 +4,13 @@ import {
   Get,
   Param,
   Post,
+  Patch,
   UseGuards,
   Req,
 } from '@nestjs/common';
 import { CourseService } from '../services/course.service';
 import { CreateCourseDto } from '../dto/create-course.dto';
+import { UpdateCourseDto } from '../dto/update-course.dto';
 import { AuthGuard } from '../../../supabase/auth.guard';
 import { Request } from 'express';
 
@@ -36,5 +38,14 @@ export class CourseController {
     @Req() req: Request & { accessToken: string },
   ) {
     return this.courseService.findOne(id, req.accessToken);
+  }
+
+  @Patch(':id')
+  async update(
+    @Param('id') id: string,
+    @Body() updateCourseDto: UpdateCourseDto,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.courseService.update(id, updateCourseDto, req.accessToken);
   }
 }
