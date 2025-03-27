@@ -58,3 +58,12 @@ export interface ProgramStudent {
   profile_picture?: string;
   totalCredits: number;
 }
+
+export interface ProgramWithStudentCount {
+  program_id: string;
+  program_name: string;
+  program_type: string;
+  total_credits: number;
+  updated_at: string;
+  total_students: number;
+}

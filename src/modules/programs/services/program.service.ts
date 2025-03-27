@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { CreateProgramDto } from '../dto/create-program.dto';
 import { AddCoursesToProgramDto } from '../dto/add-courses-to-program.dto';
+import { UpdateProgramDto } from '../dto/update-program.dto';
 import { SupabaseService } from '../../../supabase/supabase.service';
 import {
   ProgramCourse,
@@ -15,6 +16,7 @@ import {
   RawProgramCourse,
   StudentWithDetails,
   ProgramStudent,
+  ProgramWithStudentCount,
 } from '../types/program.types';
 
 @Injectable()
@@ -29,8 +31,44 @@ export class ProgramService {
     return this.supabaseService.insert(accessToken, 'programs', programData);
   }
 
-  async findAll(accessToken: string) {
-    return this.supabaseService.select(accessToken, 'programs', {});
+  async findAll(accessToken: string): Promise<ProgramWithStudentCount[]> {
+    try {
+      // Get all programs
+      const result = await this.supabaseService.select(
+        accessToken,
+        'programs',
+        {},
+      );
+
+      if (!result || !Array.isArray(result)) {
+        return [];
+      }
+
+      const programs = result as unknown as ProgramWithStudentCount[];
+
+      // Get student counts for all programs
+      const programsWithCounts = await Promise.all(
+        programs.map(async (program) => {
+          const students = await this.supabaseService.select(
+            accessToken,
+            'students',
+            {
+              filter: { program_id: program.program_id },
+            },
+          );
+
+          return {
+            ...program,
+            total_students:
+              students && Array.isArray(students) ? students.length : 0,
+          };
+        }),
+      );
+
+      return programsWithCounts;
+    } catch (error) {
+      throw new InternalServerErrorException('Failed to get programs');
+    }
   }
 
   async findOne(id: string, accessToken: string) {
@@ -43,6 +81,27 @@ export class ProgramService {
     }
 
     return result[0];
+  }
+
+  async update(
+    id: string,
+    updateProgramDto: UpdateProgramDto,
+    accessToken: string,
+  ) {
+    // First check if program exists
+    await this.findOne(id, accessToken);
+
+    const programData = {
+      ...updateProgramDto,
+      updated_at: new Date().toISOString(),
+    };
+
+    return this.supabaseService.update(
+      accessToken,
+      'programs',
+      { program_id: id },
+      programData,
+    );
   }
 
   private async checkCourseHasEnrollments(
@@ -286,6 +345,31 @@ export class ProgramService {
     return this.supabaseService.delete(accessToken, 'program_courses', {
       program_id: programId,
       course_id: courseId,
+    });
+  }
+
+  async delete(id: string, accessToken: string) {
+    // First check if program exists
+    await this.findOne(id, accessToken);
+
+    // Check if program has any students
+    const students = await this.supabaseService.select(
+      accessToken,
+      'students',
+      {
+        filter: { program_id: id },
+      },
+    );
+
+    if (students && Array.isArray(students) && students.length > 0) {
+      throw new BadRequestException(
+        `Cannot delete program ${id} because it has ${students.length} enrolled students`,
+      );
+    }
+
+    // Delete the program
+    return this.supabaseService.delete(accessToken, 'programs', {
+      program_id: id,
     });
   }
 }

@@ -8,10 +8,12 @@ import {
   UseGuards,
   Req,
   ParseIntPipe,
+  Patch,
 } from '@nestjs/common';
 import { ProgramService } from '../services/program.service';
 import { CreateProgramDto } from '../dto/create-program.dto';
 import { AddCoursesToProgramDto } from '../dto/add-courses-to-program.dto';
+import { UpdateProgramDto } from '../dto/update-program.dto';
 import { AuthGuard } from '../../../supabase/auth.guard';
 import { Request } from 'express';
 import { ProgramCourseWithEnrollmentStatus } from '../types/program.types';
@@ -40,6 +42,23 @@ export class ProgramController {
     @Req() req: Request & { accessToken: string },
   ) {
     return this.programService.findOne(id, req.accessToken);
+  }
+
+  @Patch(':id')
+  async update(
+    @Param('id') id: string,
+    @Body() updateProgramDto: UpdateProgramDto,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.programService.update(id, updateProgramDto, req.accessToken);
+  }
+
+  @Delete(':id')
+  async delete(
+    @Param('id') id: string,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.programService.delete(id, req.accessToken);
   }
 
   @Get(':id/courses')
