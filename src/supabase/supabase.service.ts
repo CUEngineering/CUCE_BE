@@ -79,7 +79,43 @@ export class SupabaseService {
     let queryBuilder = client.from(table).select(query.columns || '*');
 
     if (query.filter) {
-      queryBuilder = queryBuilder.match(query.filter);
+      // Iterate through filter conditions to apply appropriate Supabase filtering
+      Object.entries(query.filter).forEach(([column, condition]) => {
+        if (Array.isArray(condition)) {
+          // Handle array-based filtering (e.g., student_id: [1, 2, 3])
+          queryBuilder = queryBuilder.in(column, condition);
+        } else if (condition && typeof condition === 'object') {
+          // Handle complex filter conditions
+          if ('in' in condition) {
+            // Use .in() for array-based filtering
+            queryBuilder = queryBuilder.in(column, condition.in);
+          } else if ('gt' in condition) {
+            // Greater than
+            queryBuilder = queryBuilder.gt(column, condition.gt);
+          } else if ('lt' in condition) {
+            // Less than
+            queryBuilder = queryBuilder.lt(column, condition.lt);
+          } else if ('gte' in condition) {
+            // Greater than or equal
+            queryBuilder = queryBuilder.gte(column, condition.gte);
+          } else if ('lte' in condition) {
+            // Less than or equal
+            queryBuilder = queryBuilder.lte(column, condition.lte);
+          } else if ('eq' in condition) {
+            // Exact equality
+            queryBuilder = queryBuilder.eq(column, condition.eq);
+          } else if ('neq' in condition) {
+            // Not equal
+            queryBuilder = queryBuilder.neq(column, condition.neq);
+          } else {
+            // Fallback to .match() for other object conditions
+            queryBuilder = queryBuilder.match({ [column]: condition });
+          }
+        } else {
+          // Fallback to .eq() for simple equality filters
+          queryBuilder = queryBuilder.eq(column, condition);
+        }
+      });
     }
 
     if (query.limit) {

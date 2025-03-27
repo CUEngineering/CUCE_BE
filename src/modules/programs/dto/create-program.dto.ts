@@ -1,4 +1,5 @@
 import { IsEnum, IsInt, IsNotEmpty, IsString, Min } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 // Define ProgramType enum here since we can't import it directly
 export enum ProgramType {
@@ -14,6 +15,13 @@ export class CreateProgramDto {
   program_name: string;
 
   @IsEnum(ProgramType)
+  @IsNotEmpty()
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      return value.toUpperCase();
+    }
+    return value;
+  })
   program_type: ProgramType;
 
   @IsInt()

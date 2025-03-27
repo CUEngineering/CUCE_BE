@@ -1,18 +1,32 @@
-import { Injectable, Req, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Req,
+  NotFoundException,
+  BadRequestException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { CreateProgramDto } from '../dto/create-program.dto';
 import { AddCoursesToProgramDto } from '../dto/add-courses-to-program.dto';
 import { SupabaseService } from '../../../supabase/supabase.service';
+import {
+  ProgramCourse,
+  ProgramCourseWithEnrollmentStatus,
+  Student,
+  RawProgramCourse,
+  StudentWithDetails,
+  ProgramStudent,
+} from '../types/program.types';
 
 @Injectable()
 export class ProgramService {
   constructor(private readonly supabaseService: SupabaseService) {}
 
   async create(createProgramDto: CreateProgramDto, accessToken: string) {
-    return this.supabaseService.insert(
-      accessToken,
-      'programs',
-      createProgramDto,
-    );
+    const programData = {
+      ...createProgramDto,
+      updated_at: new Date().toISOString(),
+    };
+    return this.supabaseService.insert(accessToken, 'programs', programData);
   }
 
   async findAll(accessToken: string) {
@@ -31,16 +45,201 @@ export class ProgramService {
     return result[0];
   }
 
-  async getProgramCourses(id: string, accessToken: string) {
-    return this.supabaseService.select(accessToken, 'program_courses', {
-      filter: { program_id: id },
-    });
+  private async checkCourseHasEnrollments(
+    programId: string,
+    courseId: number,
+    accessToken: string,
+  ): Promise<boolean> {
+    try {
+      // Get all students in this program
+      const result = await this.supabaseService.select(
+        accessToken,
+        'students',
+        {
+          filter: { program_id: programId },
+        },
+      );
+
+      if (!result || !Array.isArray(result)) {
+        return false;
+      }
+
+      const students = result as unknown as Student[];
+
+      if (students.length === 0) {
+        return false;
+      }
+
+      // Get student IDs from this program
+      const studentIds = students.map((student) => student.student_id);
+
+      // Check if any student from this program is enrolled in this course
+      const enrollments = await this.supabaseService.select(
+        accessToken,
+        'enrollments',
+        {
+          filter: {
+            course_id: courseId,
+            student_id: studentIds,
+          },
+          limit: 1,
+        },
+      );
+
+      return enrollments && enrollments.length > 0;
+    } catch (error) {
+      throw new InternalServerErrorException(
+        'Failed to check course enrollments',
+      );
+    }
   }
 
-  async getProgramStudents(id: string, accessToken: string) {
-    return this.supabaseService.select(accessToken, 'students', {
-      filter: { program_id: id },
-    });
+  async getProgramCourses(
+    id: string,
+    accessToken: string,
+  ): Promise<ProgramCourseWithEnrollmentStatus[]> {
+    try {
+      // First check if program exists
+      const programResult = await this.supabaseService.select(
+        accessToken,
+        'programs',
+        {
+          filter: { program_id: id },
+        },
+      );
+
+      if (!programResult || programResult.length === 0) {
+        throw new NotFoundException(`Program with ID ${id} not found`);
+      }
+
+      const result = await this.supabaseService.select(
+        accessToken,
+        'program_courses',
+        {
+          filter: { program_id: id },
+        },
+      );
+
+      if (!result || !Array.isArray(result)) {
+        return [];
+      }
+
+      // Ensure course_id is a number
+      const programCourses = (result as unknown as RawProgramCourse[]).map(
+        (item) => ({
+          program_id: item.program_id,
+          course_id: Number(item.course_id),
+          updated_at: item.updated_at || new Date().toISOString(),
+        }),
+      ) as ProgramCourse[];
+
+      // Add hasEnrollments flag to each course
+      const coursesWithEnrollmentStatus = await Promise.all(
+        programCourses.map(async (pc) => {
+          try {
+            const hasEnrollments = await this.checkCourseHasEnrollments(
+              id,
+              pc.course_id,
+              accessToken,
+            );
+            return {
+              ...pc,
+              hasEnrollments,
+            };
+          } catch (error) {
+            // If we can't check enrollments for a course, mark it as having enrollments to be safe
+            return {
+              ...pc,
+              hasEnrollments: true,
+            };
+          }
+        }),
+      );
+
+      return coursesWithEnrollmentStatus;
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('Failed to get program courses');
+    }
+  }
+
+  async getProgramStudents(
+    id: string,
+    accessToken: string,
+  ): Promise<ProgramStudent[]> {
+    try {
+      // First check if program exists
+      const programResult = await this.supabaseService.select(
+        accessToken,
+        'programs',
+        {
+          filter: { program_id: id },
+        },
+      );
+
+      if (!programResult || programResult.length === 0) {
+        throw new NotFoundException(`Program with ID ${id} not found`);
+      }
+
+      // Get all students in this program with their enrollments and course data
+      const result = await this.supabaseService.select(
+        accessToken,
+        'students',
+        {
+          filter: { program_id: id },
+          columns: `
+            student_id,
+            reg_number,
+            first_name,
+            last_name,
+            email,
+            profile_picture,
+            enrollments(
+              enrollment_status,
+              course:courses(
+                course_credits
+              )
+            )
+          `,
+        },
+      );
+
+      if (!result || !Array.isArray(result)) {
+        return [];
+      }
+
+      // Calculate total credits for each student
+      return (result as unknown as StudentWithDetails[]).map((student) => {
+        const enrollments = student.enrollments || [];
+        const totalCredits = enrollments
+          .filter(
+            (e) =>
+              e.enrollment_status === 'APPROVED' ||
+              e.enrollment_status === 'COMPLETED',
+          )
+          .reduce(
+            (acc, enrollment) => acc + enrollment.course.course_credits,
+            0,
+          );
+
+        return {
+          student_id: student.student_id,
+          reg_number: student.reg_number,
+          first_name: student.first_name,
+          last_name: student.last_name,
+          email: student.email,
+          profile_picture: student.profile_picture,
+          totalCredits,
+        };
+      });
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('Failed to get program students');
+    }
   }
 
   async addCourses(
@@ -51,10 +250,13 @@ export class ProgramService {
     // First check if program exists
     await this.findOne(programId, accessToken);
 
+    const currentTimestamp = new Date().toISOString();
+
     // Create program_courses entries for each course
-    const programCourses = addCoursesDto.courseIds.map((courseId) => ({
+    const programCourses = addCoursesDto.courses.map((courseId) => ({
       program_id: programId,
       course_id: courseId,
+      updated_at: currentTimestamp,
     }));
 
     return this.supabaseService.insert(
@@ -64,9 +266,21 @@ export class ProgramService {
     );
   }
 
-  async removeCourse(programId: string, courseId: string, accessToken: string) {
+  async removeCourse(programId: string, courseId: number, accessToken: string) {
     // First check if program exists
     await this.findOne(programId, accessToken);
+
+    // Check if course has enrollments from students in this program
+    const hasEnrollments = await this.checkCourseHasEnrollments(
+      programId,
+      courseId,
+      accessToken,
+    );
+    if (hasEnrollments) {
+      throw new BadRequestException(
+        `Cannot remove course ${courseId} from program ${programId} because it has existing enrollments from students in this program`,
+      );
+    }
 
     // Delete the program_course entry
     return this.supabaseService.delete(accessToken, 'program_courses', {
