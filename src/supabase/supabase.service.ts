@@ -369,7 +369,6 @@ export class SupabaseService {
       throw new InternalServerErrorException('Failed to delete user');
     }
   }
-
   /**
    * Insert a record using admin privileges (bypassing RLS)
    */
@@ -400,7 +399,6 @@ export class SupabaseService {
       };
     }
   }
-
   /**
    * Insert a single record and return it using admin privileges (bypassing RLS)
    */
