@@ -14,14 +14,10 @@ import { EnrollmentsModule } from './modules/enrollments/enrollments.module';
 import { SessionsModule } from './modules/sessions/sessions.module';
 import { StudentsModule } from './modules/students/students.module';
 import { PrismaClient } from '@prisma/client';
+import { HomeController } from './modules/home/home.controller';
 
 @Module({
   imports: [
-    // ConfigModule.forRoot({
-    //   isGlobal: true,
-    //   validate,
-    //   envFilePath: ['.env', '.env.example'],
-    // }),
     ConfigModule.forRoot({
       isGlobal: true,
       validate,
@@ -38,7 +34,10 @@ import { PrismaClient } from '@prisma/client';
     SessionsModule,
     StudentsModule,
   ],
-  controllers: [AppController],
+  controllers: [
+    // AppController,
+    HomeController,
+  ],
   providers: [
     AppService,
     {
