@@ -15,24 +15,34 @@ async function bootstrap() {
     }),
   );
 
-  // // Set global prefix for all routes
-  // app.setGlobalPrefix('api');
-
-  // Enable CORS
-  app.enableCors();
+  // Set global prefix
+  app.setGlobalPrefix('api');
 
   const configService = app.get(ConfigService);
-  const port = configService.get<number>('PORT') || 3000;
 
+  const allowedOrigins = configService
+    .get<string>('CORS_ORIGINS')
+    ?.split(',')
+    .map((origin) => origin.trim());
+
+  app.enableCors({
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
+      if (!origin || allowedOrigins?.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true,
+  });
+
+  const port = configService.get<number>('PORT') || 3000;
   await app.listen(port);
 }
 
-// Fix the floating promise by either:
-// 1. Using void operator
-// void bootstrap();
-
-// OR
-// 2. Using .catch() to handle potential errors
 bootstrap().catch((err) => {
   console.error('Failed to start application:', err);
   process.exit(1);
