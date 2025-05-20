@@ -17,10 +17,16 @@ import { PrismaClient } from '@prisma/client';
 
 @Module({
   imports: [
+    // ConfigModule.forRoot({
+    //   isGlobal: true,
+    //   validate,
+    //   envFilePath: ['.env', '.env.example'],
+    // }),
     ConfigModule.forRoot({
       isGlobal: true,
       validate,
-      envFilePath: ['.env', '.env.example'],
+      envFilePath:
+        process.env.NODE_ENV === 'production' ? '.env.production' : '.env',
     }),
     SupabaseModule,
     CoursesModule,
