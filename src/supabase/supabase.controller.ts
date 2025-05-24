@@ -33,7 +33,7 @@ export class SupabaseController {
         first_name: 'Jane',
         last_name: 'Doe',
         email: 'jane.registrar@example.com',
-        profile_picture: 'https://example.com/profiles/jane.jpg',
+        profile_picture: 'https://mayowafadeni.vercel.app/may.jpg',
         reg_number: 'REG12345',
         program_id: 'PRG001',
         is_deactivated: false,
