@@ -45,7 +45,7 @@ export class SupabaseController {
         expires_in: 3600,
         token_type: 'bearer',
       },
-      role: 'REGISTRAR',
+      role: 'ADMIN',
     };
   }
 
