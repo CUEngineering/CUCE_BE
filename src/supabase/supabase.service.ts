@@ -261,53 +261,104 @@ export class SupabaseService {
       });
 
       if (error) {
-        // Handle specific Supabase login errors
         if (error.message.includes('Invalid login credentials')) {
           throw new UnauthorizedException('Invalid email or password');
         }
         throw new InternalServerErrorException(error.message);
       }
 
-      // If login is successful but no user is created (rare case)
       if (!data.user) {
         throw new UnauthorizedException('Authentication failed');
       }
 
-      // Get user's role
-      const { data: userRole } = await this.adminClient
+      const userId = data.user.id;
+
+      // Get user role
+      const { data: userRoleData, error: roleError } = await this.adminClient
         .from('user_roles')
         .select('role')
-        .eq('user_id', data.user.id)
+        .eq('user_id', userId)
         .single();
 
-      // Check if user is a registrar and their status
-      if (userRole?.role === 'REGISTRAR') {
-        const { data: registrar } = await this.adminClient
-          .from('registrars')
-          .select('is_deactivated, is_suspended')
-          .eq('user_id', data.user.id)
-          .single();
+      if (roleError || !userRoleData?.role) {
+        throw new UnauthorizedException('User role not found');
+      }
 
-        if (registrar?.is_deactivated) {
-          throw new UnauthorizedException(
-            'Your account has been deactivated. Please contact support.',
-          );
+      const role = userRoleData.role.toUpperCase();
+      let profileData: any = {};
+
+      switch (role) {
+        case 'REGISTRAR': {
+          const { data: registrar, error: regError } = await this.adminClient
+            .from('registrars')
+            .select(
+              'first_name, last_name, email, profile_picture, reg_number, program_id, is_deactivated, is_suspended',
+            )
+            .eq('user_id', userId)
+            .single();
+
+          if (regError || !registrar) {
+            throw new UnauthorizedException('Registrar profile not found');
+          }
+
+          if (registrar.is_deactivated) {
+            throw new UnauthorizedException(
+              'Your account has been deactivated. Please contact support.',
+            );
+          }
+
+          if (registrar.is_suspended) {
+            throw new UnauthorizedException(
+              'Your account is currently suspended. Please contact support.',
+            );
+          }
+
+          profileData = registrar;
+          break;
         }
 
-        if (registrar?.is_suspended) {
-          throw new UnauthorizedException(
-            'Your account is currently suspended. Please contact support.',
-          );
+        case 'ADMIN': {
+          const { data: admin, error: adminError } = await this.adminClient
+            .from('admins')
+            .select('first_name, last_name, email, profile_picture')
+            .eq('user_id', userId)
+            .single();
+
+          if (adminError || !admin) {
+            throw new UnauthorizedException('Admin profile not found');
+          }
+
+          profileData = admin;
+          break;
         }
+
+        case 'STUDENT': {
+          const { data: student, error: studentError } = await this.adminClient
+            .from('students')
+            .select(
+              'first_name, last_name, email, profile_picture, reg_number, program_id',
+            )
+            .eq('user_id', userId)
+            .single();
+
+          if (studentError || !student) {
+            throw new UnauthorizedException('Student profile not found');
+          }
+
+          profileData = student;
+          break;
+        }
+
+        default:
+          throw new UnauthorizedException('Unknown user role');
       }
 
       return {
-        user: data.user,
+        user: profileData,
         session: data.session,
-        role: userRole?.role || 'NULL', // Include role in response, default to 'USER' if not found
+        role,
       };
     } catch (error) {
-      // Rethrow known exceptions
       if (
         error instanceof UnauthorizedException ||
         error instanceof InternalServerErrorException
@@ -315,7 +366,6 @@ export class SupabaseService {
         throw error;
       }
 
-      // Catch any unexpected errors
       throw new InternalServerErrorException('Sign in failed');
     }
   }
