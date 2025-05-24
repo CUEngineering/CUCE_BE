@@ -160,6 +160,21 @@ model user_roles {
   updated_at DateTime  @updatedAt
 }
 
+model admins {
+  admin_id        Int               @id @default(autoincrement())
+  first_name      String?
+  last_name       String?
+  email           String            @unique
+  profile_picture String?
+  user_id         String            @unique @db.Uuid
+  created_at      DateTime          @default(now())
+  updated_at      DateTime          @updatedAt
+  is_suspended    Boolean           @default(false)
+  is_deactivated  Boolean           @default(false)
+
+}
+
+
 // Enums
 enum CourseType {
   UNDERGRADUATE
