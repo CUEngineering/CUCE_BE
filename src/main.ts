@@ -3,6 +3,7 @@ import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { RequestMethod } from '@nestjs/common';
+import { ResponseInterceptor } from './interceptors/response.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -46,6 +47,7 @@ async function bootstrap() {
   });
 
   const port = configService.get<number>('PORT') || 3000;
+  app.useGlobalInterceptors(new ResponseInterceptor());
   await app.listen(port);
 }
 

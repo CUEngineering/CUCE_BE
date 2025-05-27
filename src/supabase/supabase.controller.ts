@@ -27,30 +27,7 @@ export class SupabaseController {
   @Post('signin')
   @UsePipes(new ValidationPipe())
   async signIn(@Body() signInDto: SignInDto) {
-    // return this.supabaseService.signIn(signInDto.email, signInDto.password);
-
-    //prisma
-    return {
-      user: {
-        first_name: 'Jane',
-        last_name: 'Doe',
-        email: 'jane.registrar@example.com',
-        profile_picture: 'https://mayowafadeni.vercel.app/may.jpg',
-        reg_number: 'REG12345',
-        program_id: 'PRG001',
-        is_deactivated: false,
-        is_suspended: false,
-      },
-      session: {
-        access_token: 'eyJhbGciOiJIUzI1NiIsInR...',
-        refresh_token: 'eyJhbGciOiJIUzI1NiIsInR...',
-        expires_in: 3600,
-        token_type: 'bearer',
-      },
-      role: 'ADMIN',
-      // role:'STUDENT',
-      // role: 'REGISTRAR',
-    };
+    return this.supabaseService.signIn(signInDto.email, signInDto.password);
   }
 
   @Post('signout')

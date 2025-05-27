@@ -44,14 +44,11 @@ export class RegistrarsService {
   ) {}
 
   async findAll(accessToken: string): Promise<Registrar[]> {
-    // const result = (await this.supabaseService.select(
-    //   accessToken,
-    //   'registrars',
-    //   {},
-    // )) as unknown as Registrar[];
-
-    //prisma
-    const result = (await this.prisma.registrars.findMany()) as Registrar[];
+    const result = (await this.supabaseService.select(
+      accessToken,
+      'registrars',
+      {},
+    )) as unknown as Registrar[];
 
     // Get stats for each registrar
     const registrarsWithStats = await Promise.all(
@@ -71,18 +68,13 @@ export class RegistrarsService {
   }
 
   async findOne(registrar_id: number, accessToken: string): Promise<Registrar> {
-    // const result = (await this.supabaseService.select(
-    //   accessToken,
-    //   'registrars',
-    //   {
-    //     filter: { registrar_id },
-    //   },
-    // )) as unknown as Registrar[];
-
-    //prisma
-    const result = (await this.prisma.registrars.findMany({
-      where: { registrar_id },
-    })) as Registrar[];
+    const result = (await this.supabaseService.select(
+      accessToken,
+      'registrars',
+      {
+        filter: { registrar_id },
+      },
+    )) as unknown as Registrar[];
 
     if (!result || result.length === 0) {
       throw new NotFoundException(
@@ -330,20 +322,13 @@ export class RegistrarsService {
     await this.findOne(registrar_id, accessToken);
 
     // Get all enrollments for this registrar
-    // const enrollments = (await this.supabaseService.select(
-    //   accessToken,
-    //   'enrollments',
-    //   {
-    //     filter: { registrar_id },
-    //   },
-    // )) as unknown as Enrollment[];
-
-    //prisma
-    const enrollments = (await this.prisma.enrollments.findMany({
-      where: {
-        registrar_id: registrar_id,
+    const enrollments = (await this.supabaseService.select(
+      accessToken,
+      'enrollments',
+      {
+        filter: { registrar_id },
       },
-    })) as Enrollment[];
+    )) as unknown as Enrollment[];
 
     // Get unique sessions
     const uniqueSessions = [...new Set(enrollments.map((e) => e.session_id))];
