@@ -51,12 +51,20 @@ export class InvitationsService {
         query.filter = { status: status.toUpperCase() };
       }
 
-      const invitations = await this.supabaseService.select(
-        accessToken,
-        'invitations',
-        query,
-      );
-
+      // const invitations = await this.supabaseService.select(
+      //   accessToken,
+      //   'invitations',
+      //   query,
+      // );
+      //prisma
+      const invitations = await this.prisma.invitations.findMany({
+        where: status
+          ? { status: status.toUpperCase() as InvitationStatus }
+          : undefined,
+        orderBy: {
+          created_at: 'desc',
+        },
+      });
       return invitations;
     } catch (error) {
       // Rethrow known error types

@@ -15,6 +15,7 @@ import { SessionsModule } from './modules/sessions/sessions.module';
 import { StudentsModule } from './modules/students/students.module';
 import { PrismaClient } from '@prisma/client';
 import { HomeController } from './modules/home/home.controller';
+import { DashboardsModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { HomeController } from './modules/home/home.controller';
     EnrollmentsModule,
     SessionsModule,
     StudentsModule,
+    DashboardsModule,
   ],
   controllers: [
     // AppController,

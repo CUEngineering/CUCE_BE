@@ -28,6 +28,8 @@ export class SupabaseController {
   @UsePipes(new ValidationPipe())
   async signIn(@Body() signInDto: SignInDto) {
     // return this.supabaseService.signIn(signInDto.email, signInDto.password);
+
+    //prisma
     return {
       user: {
         first_name: 'Jane',
@@ -46,6 +48,8 @@ export class SupabaseController {
         token_type: 'bearer',
       },
       role: 'ADMIN',
+      // role:'STUDENT',
+      // role: 'REGISTRAR',
     };
   }
 

@@ -19,6 +19,9 @@ import {
   RegistrarResponse,
 } from '../types/registrar.types';
 
+import { Inject } from '@nestjs/common';
+import { PrismaClient } from '@prisma/client';
+
 function safeUuidv4(): string {
   try {
     return randomUUID();
@@ -35,14 +38,20 @@ interface EmailDto {
 export class RegistrarsService {
   private readonly logger = new Logger(RegistrarsService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    @Inject('PRISMA_CLIENT') private readonly prisma: PrismaClient,
+  ) {}
 
   async findAll(accessToken: string): Promise<Registrar[]> {
-    const result = (await this.supabaseService.select(
-      accessToken,
-      'registrars',
-      {},
-    )) as unknown as Registrar[];
+    // const result = (await this.supabaseService.select(
+    //   accessToken,
+    //   'registrars',
+    //   {},
+    // )) as unknown as Registrar[];
+
+    //prisma
+    const result = (await this.prisma.registrars.findMany()) as Registrar[];
 
     // Get stats for each registrar
     const registrarsWithStats = await Promise.all(
@@ -62,13 +71,18 @@ export class RegistrarsService {
   }
 
   async findOne(registrar_id: number, accessToken: string): Promise<Registrar> {
-    const result = (await this.supabaseService.select(
-      accessToken,
-      'registrars',
-      {
-        filter: { registrar_id },
-      },
-    )) as unknown as Registrar[];
+    // const result = (await this.supabaseService.select(
+    //   accessToken,
+    //   'registrars',
+    //   {
+    //     filter: { registrar_id },
+    //   },
+    // )) as unknown as Registrar[];
+
+    //prisma
+    const result = (await this.prisma.registrars.findMany({
+      where: { registrar_id },
+    })) as Registrar[];
 
     if (!result || result.length === 0) {
       throw new NotFoundException(
@@ -316,13 +330,20 @@ export class RegistrarsService {
     await this.findOne(registrar_id, accessToken);
 
     // Get all enrollments for this registrar
-    const enrollments = (await this.supabaseService.select(
-      accessToken,
-      'enrollments',
-      {
-        filter: { registrar_id },
+    // const enrollments = (await this.supabaseService.select(
+    //   accessToken,
+    //   'enrollments',
+    //   {
+    //     filter: { registrar_id },
+    //   },
+    // )) as unknown as Enrollment[];
+
+    //prisma
+    const enrollments = (await this.prisma.enrollments.findMany({
+      where: {
+        registrar_id: registrar_id,
       },
-    )) as unknown as Enrollment[];
+    })) as Enrollment[];
 
     // Get unique sessions
     const uniqueSessions = [...new Set(enrollments.map((e) => e.session_id))];
