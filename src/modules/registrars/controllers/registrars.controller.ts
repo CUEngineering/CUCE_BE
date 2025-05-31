@@ -72,31 +72,55 @@ export class RegistrarsController {
   ) {
     const results: InvitationResult[] = [];
 
-    for (const email of inviteDto.emails) {
-      try {
-        const invitation = await this.registrarsService.inviteRegistrar(
-          { email },
-          req.accessToken,
-        );
-        results.push({
-          email,
-          success: true,
-          invitation,
-        });
-      } catch (error) {
-        results.push({
-          email,
-          success: false,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        });
+    setImmediate(async () => {
+      for (const email of inviteDto.emails) {
+        try {
+          const invitation = await this.registrarsService.inviteRegistrar(
+            { email },
+            req.accessToken,
+          );
+          results.push({
+            email,
+            success: true,
+            invitation,
+          });
+        } catch (error) {
+          results.push({
+            email,
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+        }
       }
-    }
+    });
 
     return {
       totalInvited: results.filter((r) => r.success).length,
       totalFailed: results.filter((r) => !r.success).length,
       results,
     };
+  }
+
+  @Post('delete-invite')
+  async deleteInvite(
+    @Body('email') email: string,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return await this.registrarsService.deleteInvitation(
+      email,
+      req.accessToken,
+    );
+  }
+  @Post('resend-invite')
+  async resendInvite(
+    @Body('email') email: string,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    const result = await this.registrarsService.resendInvitation(
+      email,
+      req.accessToken,
+    );
+    return result;
   }
 
   @Patch(':id/suspend')

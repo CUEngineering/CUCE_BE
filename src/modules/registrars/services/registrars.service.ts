@@ -21,6 +21,7 @@ import {
 
 import { Inject } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
+import { sendEmail } from 'src/utils/email.helper';
 
 function safeUuidv4(): string {
   try {
@@ -199,6 +200,17 @@ export class RegistrarsService {
       },
     )) as unknown as Invitation[];
 
+    await sendEmail({
+      to: email,
+      subject: 'You have been invited as a Registrar',
+      template: 'registrar-invite.html',
+      context: {
+        email,
+        token,
+        link: `${process.env.APP_BASE_URL}/accept-invite?token=${token}`,
+      },
+    });
+
     return {
       success: true,
       message: `Invitation sent to ${email}`,
@@ -361,6 +373,86 @@ export class RegistrarsService {
       cancelledEnrollments: cancelledEnrollments.length,
       approvedEnrollments: approvedEnrollments.length,
       rejectedEnrollments: rejectedEnrollments.length,
+    };
+  }
+
+  async resendInvitation(
+    email: string,
+    accessToken: string,
+  ): Promise<InvitationResponse> {
+    const invitations = (await this.supabaseService.select(
+      accessToken,
+      'invitations',
+      {
+        filter: {
+          email,
+          status: 'PENDING',
+        },
+      },
+    )) as unknown as Invitation[];
+
+    if (!invitations.length) {
+      throw new NotFoundException(`No pending invitation found for ${email}`);
+    }
+
+    const invitation = invitations[0];
+
+    const token = safeUuidv4();
+    const updatedInvitation = (await this.supabaseService.update(
+      accessToken,
+      'invitations',
+      {
+        token,
+        updated_at: new Date().toISOString(),
+      },
+      { email, status: 'PENDING' },
+    )) as unknown as Invitation[];
+
+    await sendEmail({
+      to: email,
+      subject: 'Resent Invitation as a Registrar',
+      template: 'registrar-invite.html',
+      context: {
+        email,
+        token,
+        link: `${process.env.APP_BASE_URL}/accept-invite?token=${token}`,
+      },
+    });
+
+    return {
+      success: true,
+      message: `Invitation resent to ${email}`,
+      invitation: updatedInvitation[0],
+    };
+  }
+
+  async deleteInvitation(
+    email: string,
+    accessToken: string,
+  ): Promise<{ success: boolean; message: string }> {
+    const invitations = (await this.supabaseService.select(
+      accessToken,
+      'invitations',
+      {
+        filter: {
+          email,
+          status: 'PENDING',
+        },
+      },
+    )) as unknown as Invitation[];
+
+    if (!invitations.length) {
+      throw new NotFoundException(`No pending invitation found for ${email}`);
+    }
+
+    await this.supabaseService.delete(accessToken, 'invitations', {
+      email,
+      status: 'PENDING',
+    });
+
+    return {
+      success: true,
+      message: `Pending invitation for ${email} has been deleted.`,
     };
   }
 }
