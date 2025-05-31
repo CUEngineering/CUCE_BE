@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { SupabaseClient, createClient } from '@supabase/supabase-js';
 import { ConfigService } from '@nestjs/config';
+import { sendResetTokenEmail } from 'src/utils/email.helper';
 
 @Injectable()
 export class SupabaseService {
@@ -479,5 +480,91 @@ export class SupabaseService {
         },
       };
     }
+  }
+
+  async forgotPassword(email: string) {
+    const { data: usersData, error: listError } =
+      await this.adminClient.auth.admin.listUsers();
+
+    if (listError) {
+      throw new InternalServerErrorException('Failed to fetch user list');
+    }
+
+    const user = usersData.users.find(
+      (u) => u.email?.toLowerCase() === email.toLowerCase(),
+    );
+
+    if (!user) {
+      throw new UnauthorizedException('No user found with that email');
+    }
+
+    await this.adminClient.from('password_resets').delete().eq('email', email);
+
+    const token = Math.floor(100000 + Math.random() * 900000).toString();
+
+    const { error: insertError } = await this.adminClient
+      .from('password_resets')
+      .insert({
+        email,
+        token,
+        createdAt: new Date().toISOString(),
+      });
+
+    if (insertError) {
+      throw new InternalServerErrorException('Could not generate reset token');
+    }
+
+    await sendResetTokenEmail(email, token);
+
+    return { message: 'Reset token sent to email' };
+  }
+
+  async resetPassword(email: string, token: string, newPassword: string) {
+    const { data: resetData, error } = await this.adminClient
+      .from('password_resets')
+      .select('*')
+      .eq('email', email)
+      .eq('token', token)
+      .order('createdAt', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error || !resetData) {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+
+    // const now = new Date();
+    // const createdAt = new Date(resetData.createdAt);
+    // const diffInMinutes = (now.getTime() - createdAt.getTime()) / (1000 * 60);
+
+    // if (diffInMinutes > 10) {
+    //   throw new UnauthorizedException('Token expired');
+    // }
+
+    const { data: users, error: listError } =
+      await this.adminClient.auth.admin.listUsers();
+    if (listError) {
+      throw new InternalServerErrorException('Failed to fetch users');
+    }
+
+    const user = users.users.find(
+      (u) => u.email?.toLowerCase() === email.toLowerCase(),
+    );
+    if (!user) {
+      throw new InternalServerErrorException('User not found');
+    }
+
+    const { error: updateError } =
+      await this.adminClient.auth.admin.updateUserById(user.id, {
+        password: newPassword,
+      });
+
+    if (updateError) {
+      throw new InternalServerErrorException(updateError.message);
+    }
+
+    await this.adminClient.from('password_resets').delete().eq('email', email);
+
+    return { message: 'Password reset successful' };
   }
 }

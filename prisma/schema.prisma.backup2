@@ -8,20 +8,6 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-model admins {
-  admin_id        Int      @id @default(autoincrement())
-  first_name      String?
-  last_name       String?
-  email           String   @unique
-  profile_picture String?
-  user_id         String   @unique @db.Uuid
-  created_at      DateTime @default(now()) @db.Timestamp(6)
-  updated_at      DateTime @db.Timestamp(6)
-  is_suspended    Boolean  @default(false)
-  is_deactivated  Boolean  @default(false)
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model courses {
   course_id        Int               @id @default(autoincrement())
   course_title     String
@@ -31,13 +17,12 @@ model courses {
   default_capacity Int
   course_desc      String?
   created_at       DateTime          @default(now())
-  updated_at       DateTime
+  updated_at       DateTime          @updatedAt
   enrollments      enrollments[]
   program_courses  program_courses[]
   session_courses  session_courses[]
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model enrollments {
   enrollment_id     Int              @id @default(autoincrement())
   enrollment_status EnrollmentStatus
@@ -48,16 +33,15 @@ model enrollments {
   session_id        Int
   registrar_id      Int?
   created_at        DateTime         @default(now())
-  updated_at        DateTime
-  courses           courses          @relation(fields: [course_id], references: [course_id])
-  registrars        registrars?      @relation(fields: [registrar_id], references: [registrar_id])
-  sessions          sessions         @relation(fields: [session_id], references: [session_id])
-  students          students         @relation(fields: [student_id], references: [student_id])
+  updated_at        DateTime         @updatedAt
+  course            courses          @relation(fields: [course_id], references: [course_id])
+  registrar         registrars?      @relation(fields: [registrar_id], references: [registrar_id])
+  session           sessions         @relation(fields: [session_id], references: [session_id])
+  student           students         @relation(fields: [student_id], references: [student_id])
 
   @@unique([student_id, course_id, session_id])
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model invitations {
   invitation_id Int              @id @default(autoincrement())
   email         String
@@ -68,38 +52,35 @@ model invitations {
   student_id    Int?
   registrar_id  Int?
   created_at    DateTime         @default(now())
-  updated_at    DateTime
-  registrars    registrars?      @relation(fields: [registrar_id], references: [registrar_id])
-  students      students?        @relation(fields: [student_id], references: [student_id])
+  updated_at    DateTime         @updatedAt
+  registrar     registrars?      @relation(fields: [registrar_id], references: [registrar_id])
+  student       students?        @relation(fields: [student_id], references: [student_id])
 
   @@unique([email, status])
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model program_courses {
   program_id Int
   course_id  Int
   created_at DateTime @default(now())
-  updated_at DateTime
-  courses    courses  @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
-  programs   programs @relation(fields: [program_id], references: [program_id], onDelete: Cascade)
+  updated_at DateTime @updatedAt
+  course     courses  @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
+  program    programs @relation(fields: [program_id], references: [program_id], onDelete: Cascade)
 
   @@id([program_id, course_id])
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model programs {
   program_id      Int               @id @default(autoincrement())
   program_name    String
   program_type    ProgramType
   total_credits   Int
   created_at      DateTime          @default(now())
-  updated_at      DateTime
+  updated_at      DateTime          @updatedAt
   program_courses program_courses[]
   students        students[]
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model registrars {
   registrar_id    Int           @id @default(autoincrement())
   first_name      String?
@@ -108,40 +89,37 @@ model registrars {
   profile_picture String?
   user_id         String        @unique @db.Uuid
   created_at      DateTime      @default(now())
-  updated_at      DateTime
+  updated_at      DateTime      @updatedAt
   is_suspended    Boolean       @default(false)
   is_deactivated  Boolean       @default(false)
   enrollments     enrollments[]
   invitations     invitations[]
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model session_courses {
   session_id        Int
   course_id         Int
   status            CourseStatus @default(OPEN)
   adjusted_capacity Int
   created_at        DateTime     @default(now())
-  updated_at        DateTime
-  courses           courses      @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
-  sessions          sessions     @relation(fields: [session_id], references: [session_id], onDelete: Cascade)
+  updated_at        DateTime     @updatedAt
+  course            courses      @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
+  session           sessions     @relation(fields: [session_id], references: [session_id], onDelete: Cascade)
 
   @@id([session_id, course_id])
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model session_students {
   session_id Int
   student_id Int
   created_at DateTime @default(now())
-  updated_at DateTime
-  sessions   sessions @relation(fields: [session_id], references: [session_id])
-  students   students @relation(fields: [student_id], references: [student_id])
+  updated_at DateTime @updatedAt
+  session    sessions @relation(fields: [session_id], references: [session_id])
+  student    students @relation(fields: [student_id], references: [student_id])
 
   @@id([session_id, student_id])
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model sessions {
   session_id          Int                @id @default(autoincrement())
   session_name        String
@@ -150,13 +128,12 @@ model sessions {
   enrollment_deadline DateTime
   session_status      SessionStatus
   created_at          DateTime           @default(now())
-  updated_at          DateTime
+  updated_at          DateTime           @updatedAt
   enrollments         enrollments[]
   session_courses     session_courses[]
   session_students    session_students[]
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model students {
   student_id       Int                @id @default(autoincrement())
   reg_number       String             @unique
@@ -167,27 +144,32 @@ model students {
   program_id       Int
   user_id          String?            @unique @db.Uuid
   created_at       DateTime           @default(now())
-  updated_at       DateTime
+  updated_at       DateTime           @updatedAt
   enrollments      enrollments[]
   invitations      invitations[]
   session_students session_students[]
-  programs         programs           @relation(fields: [program_id], references: [program_id])
+  program          programs           @relation(fields: [program_id], references: [program_id])
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model user_roles {
   id         Int      @id @default(autoincrement())
   user_id    String   @unique @db.Uuid
   role       UserType
   created_at DateTime @default(now())
-  updated_at DateTime
+  updated_at DateTime @updatedAt
 }
 
-enum CourseStatus {
-  OPEN
-  CLOSED
-  FULL
-  CANCELLED
+model admins {
+  admin_id        Int      @id @default(autoincrement())
+  first_name      String?
+  last_name       String?
+  email           String   @unique
+  profile_picture String?
+  user_id         String   @unique @db.Uuid
+  created_at      DateTime @default(now()) @db.Timestamp(6)
+  updated_at      DateTime @updatedAt @db.Timestamp(6)
+  is_suspended    Boolean  @default(false)
+  is_deactivated  Boolean  @default(false)
 }
 
 enum CourseType {
@@ -232,13 +214,9 @@ enum UserType {
   ADMIN
 }
 
-model PasswordReset {
-  id         Int      @id @default(autoincrement())
-  email      String
-  token      String
-  createdAt  DateTime @default(now())
-
-  @@map("password_resets")
+enum CourseStatus {
+  OPEN
+  CLOSED
+  FULL
+  CANCELLED
 }
-
-
