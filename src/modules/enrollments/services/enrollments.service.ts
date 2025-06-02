@@ -96,6 +96,7 @@ export class EnrollmentsService {
           session_id: sessionId,
           enrollment_status: 'PENDING',
           special_request: isSpecialRequest,
+          updated_at: new Date(),
         },
       });
 
@@ -322,7 +323,7 @@ export class EnrollmentsService {
     try {
       const enrollment = await this.prisma.enrollments.findUnique({
         where: { enrollment_id: enrollmentId },
-        include: { student: true },
+        include: { students: true },
       });
 
       if (!enrollment) {
@@ -343,7 +344,7 @@ export class EnrollmentsService {
       }
 
       // If not admin, verify this is the student's own enrollment
-      if (!isAdmin && enrollment.student.user_id !== userId) {
+      if (!isAdmin && enrollment.students.user_id !== userId) {
         throw new ForbiddenException(
           'You do not have permission to cancel this enrollment',
         );
@@ -440,10 +441,10 @@ export class EnrollmentsService {
       return await this.prisma.enrollments.findMany({
         where: filters,
         include: {
-          course: true,
-          student: true,
-          registrar: true,
-          session: true,
+          courses: true,
+          students: true,
+          registrars: true,
+          sessions: true,
         },
       });
     } catch (error) {
@@ -467,10 +468,12 @@ export class EnrollmentsService {
       const enrollment = await this.prisma.enrollments.findUnique({
         where: { enrollment_id: enrollmentId },
         include: {
-          course: true,
-          student: true,
-          registrar: true,
-          session: true,
+          // course: true,
+          courses: true,
+
+          students: true,
+          registrars: true,
+          sessions: true,
         },
       });
 

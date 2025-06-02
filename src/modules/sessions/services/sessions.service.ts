@@ -95,6 +95,7 @@ export class SessionsService {
         data: {
           ...sessionData,
           session_status: 'UPCOMING',
+          updated_at: new Date(),
         },
       });
 
