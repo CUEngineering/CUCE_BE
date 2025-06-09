@@ -500,4 +500,6 @@ export class EnrollmentsService {
       );
     }
   }
+
+  // async findAllSupabase
 }
