@@ -1,12 +1,12 @@
 import {
+  ConflictException,
   Inject,
   Injectable,
-  UnauthorizedException,
-  ConflictException,
   InternalServerErrorException,
+  UnauthorizedException,
 } from '@nestjs/common';
-import { SupabaseClient, createClient } from '@supabase/supabase-js';
 import { ConfigService } from '@nestjs/config';
+import { SupabaseClient, createClient } from '@supabase/supabase-js';
 import { sendResetTokenEmail } from 'src/utils/email.helper';
 
 @Injectable()

@@ -1,8 +1,9 @@
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
+import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { RequestMethod } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
+import * as fs from 'fs-extra';
+import * as path from 'path';
+import { AppModule } from './app.module';
 import { ResponseInterceptor } from './interceptors/response.interceptor';
 
 async function bootstrap() {
@@ -48,7 +49,18 @@ async function bootstrap() {
 
   const port = configService.get<number>('PORT') || 3000;
   app.useGlobalInterceptors(new ResponseInterceptor());
+
   await app.listen(port);
+
+  const src = path.join(__dirname, '..', 'templates');
+  const dest = path.join(__dirname, 'templates');
+
+  try {
+    await fs.copy(src, dest);
+    console.log('✅ Template directory copied to dist/template');
+  } catch (err) {
+    console.error('❌ Failed to copy template directory:', err);
+  }
 }
 
 bootstrap().catch((err) => {

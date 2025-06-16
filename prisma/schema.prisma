@@ -19,6 +19,7 @@ model admins {
   updated_at      DateTime @db.Timestamp(6)
   is_suspended    Boolean  @default(false)
   is_deactivated  Boolean  @default(false)
+   enrollments enrollments[]
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -47,12 +48,14 @@ model enrollments {
   course_id         Int
   session_id        Int
   registrar_id      Int?
+  admin_id          Int? 
   created_at        DateTime         @default(now())
   updated_at        DateTime
   courses           courses          @relation(fields: [course_id], references: [course_id])
   registrars        registrars?      @relation(fields: [registrar_id], references: [registrar_id])
   sessions          sessions         @relation(fields: [session_id], references: [session_id])
   students          students         @relation(fields: [student_id], references: [student_id])
+  admins            admins?          @relation(fields: [admin_id], references: [admin_id]) // <-- New relation
 
   @@unique([student_id, course_id, session_id])
 }

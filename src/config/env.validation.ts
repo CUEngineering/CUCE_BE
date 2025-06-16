@@ -1,5 +1,5 @@
-import { IsEnum, IsNumber, IsString, validateSync } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
+import { IsEnum, IsNumber, IsString, validateSync } from 'class-validator';
 
 enum Environment {
   Development = 'development',
@@ -34,6 +34,15 @@ class EnvironmentVariables {
 
   @IsString()
   RESEND_API_KEY: string;
+
+  @IsString()
+  RESEND_DOMAIN: string;
+
+  @IsString()
+  APP_BASE_URL: string;
+
+  @IsString()
+  RESEND_EMAIL_FROM: string;
 
   @IsString()
   JWT_SECRET: string;

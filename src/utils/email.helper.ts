@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { readFile } from 'fs-extra';
-import { join } from 'path';
 import Handlebars from 'handlebars';
+import { join } from 'path';
 
 const RESEND_API_URL = 'https://api.resend.com/emails';
 
@@ -18,7 +18,7 @@ export async function sendEmail({
   subject,
   template,
   context,
-  from = process.env.RESEND_DOMAIN,
+  from = process.env.RESEND_EMAIL_FROM,
 }: SendEmailOptions): Promise<void> {
   try {
     const templatePath = join(__dirname, '..', 'templates', template);

@@ -1,14 +1,14 @@
 import {
-  Injectable,
-  NotFoundException,
   BadRequestException,
-  InternalServerErrorException,
   ForbiddenException,
   Inject,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
-import { randomUUID } from 'crypto';
 import { SupabaseService } from '../../../supabase/supabase.service';
+import { Enrollment } from '../types/enrollment.types';
 
 @Injectable()
 export class EnrollmentsService {
@@ -502,4 +502,91 @@ export class EnrollmentsService {
   }
 
   // async findAllSupabase
+  async getEnrollmentListView(
+    accessToken: string,
+    currentUserId: number,
+    currentUserRole: string,
+  ): Promise<
+    {
+      enrollmentId: number;
+      studentName: string;
+      studentId: string;
+      studentImage: string;
+      courseCode: string;
+      courseStatus: string;
+      program: string;
+      status: 'approved' | 'pending' | 'rejected';
+      assignedRegistrar?: string;
+      assignedRegistrarImage?: string;
+      assignedStatus: 'unassigned' | 'toOthers' | 'toMe';
+      sessionName: string;
+      reason: string;
+    }[]
+  > {
+    const enrollments = (await this.supabaseService.select(
+      accessToken,
+      'enrollments',
+      {
+        // columns:
+        //   '*, students(*), courses(*), registrars(*),sessions(*),admins(*)',
+        // filter: {},
+        columns: `
+      *, 
+      students(*, programs(*)), 
+      courses(*), 
+      registrars(*), 
+      sessions(*), 
+      admins(*), 
+      session_course:session_id(*)
+    `,
+        filter: {},
+      },
+    )) as unknown as Enrollment[];
+
+    return enrollments.map((e) => {
+      let status: 'approved' | 'pending' | 'rejected';
+      switch (e.enrollment_status) {
+        case 'APPROVED':
+          status = 'approved';
+          break;
+        case 'REJECTED':
+          status = 'rejected';
+          break;
+        default:
+          status = 'pending';
+          break;
+      }
+
+      // Compute assignedStatus
+      let assignedStatus: 'unassigned' | 'toOthers' | 'toMe';
+      if (!e.registrar_id && !e.admin_id) {
+        assignedStatus = 'unassigned';
+      } else if (
+        (currentUserRole === 'registrar' && e.registrar_id === currentUserId) ||
+        (currentUserRole === 'admin' && e.admin_id === currentUserId)
+      ) {
+        assignedStatus = 'toMe';
+      } else {
+        assignedStatus = 'toOthers';
+      }
+
+      return {
+        enrollmentId: e.enrollment_id,
+        studentName:
+          `${e.students?.first_name ?? ''} ${e.students?.last_name ?? ''}`.trim(),
+        studentId: e.students?.reg_number ?? '',
+        studentImage: e.students?.profile_picture ?? '',
+        courseCode: e.courses?.course_code ?? '',
+        courseStatus: e.session_course?.session_status ?? 'closed',
+        program: e.students?.programs?.program_name ?? '',
+        status,
+        assignedRegistrar:
+          `${e.registrars?.first_name ?? ''} ${e.registrars?.last_name ?? ''}`.trim(),
+        assignedRegistrarImage: e.registrars?.profile_picture ?? '',
+        assignedStatus,
+        sessionName: e.session_course?.session_name ?? '',
+        reason: e.rejection_reason,
+      };
+    });
+  }
 }
