@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { SupabaseService } from '../../../supabase/supabase.service';
+import { UpdateEnrollmentDto } from '../dto/update-enrollment.dto';
 import { Enrollment } from '../types/enrollment.types';
 
 @Injectable()
@@ -501,7 +502,7 @@ export class EnrollmentsService {
     }
   }
 
-  // async findAllSupabase
+  // SupaBase
   async getEnrollmentListView(
     accessToken: string,
     currentUserId: number,
@@ -588,5 +589,56 @@ export class EnrollmentsService {
         reason: e.rejection_reason,
       };
     });
+  }
+
+  async update(
+    enrollment_id: number,
+    updateDto: UpdateEnrollmentDto,
+    accessToken: string,
+  ): Promise<{ success: boolean; message: string; enrollment: any }> {
+    try {
+      const existing = await this.supabaseService.select(
+        accessToken,
+        'enrollments',
+        {
+          filter: { enrollment_id },
+        },
+      );
+
+      if (!existing || (existing as any[]).length === 0) {
+        throw new NotFoundException(
+          `Enrollment with ID ${enrollment_id} not found`,
+        );
+      }
+
+      const updated = await this.supabaseService.update(
+        accessToken,
+        'enrollments',
+        { enrollment_id },
+        {
+          ...updateDto,
+          updated_at: new Date(),
+        },
+      );
+
+      if (!updated || (updated as any[]).length === 0) {
+        throw new InternalServerErrorException('Failed to update enrollment');
+      }
+
+      return {
+        success: true,
+        message: `Enrollment with ID ${enrollment_id} updated successfully`,
+        enrollment: updated[0],
+      };
+    } catch (error) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+
+      throw new InternalServerErrorException('Failed to update enrollment');
+    }
   }
 }
