@@ -57,7 +57,7 @@ model enrollments {
   students          students         @relation(fields: [student_id], references: [student_id])
   admins            admins?          @relation(fields: [admin_id], references: [admin_id]) // <-- New relation
 
-  @@unique([student_id, course_id, session_id])
+ /// @@unique([student_id, course_id, session_id])
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.

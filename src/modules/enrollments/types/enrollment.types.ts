@@ -39,4 +39,6 @@ export interface Enrollment {
 
     profile_picture: string;
   };
+  created_at: Date;
+  updated_at: Date;
 }

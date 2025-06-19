@@ -522,6 +522,8 @@ export class EnrollmentsService {
       assignedStatus: 'unassigned' | 'toOthers' | 'toMe';
       sessionName: string;
       reason: string;
+      createdAt?: Date;
+      updatedAt?: Date;
     }[]
   > {
     const enrollments = (await this.supabaseService.select(
@@ -587,6 +589,8 @@ export class EnrollmentsService {
         assignedStatus,
         sessionName: e.session_course?.session_name ?? '',
         reason: e.rejection_reason,
+        createdAt: e.created_at,
+        updatedAt: e.updated_at,
       };
     });
   }
