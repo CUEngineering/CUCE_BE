@@ -1,14 +1,13 @@
 import {
-  Injectable,
-  NotFoundException,
   BadRequestException,
-  InternalServerErrorException,
   Inject,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
-import { EnrollmentsService } from '../../enrollments/services/enrollments.service';
-import { randomUUID } from 'crypto';
 import { SupabaseService } from '../../../supabase/supabase.service';
+import { EnrollmentsService } from '../../enrollments/services/enrollments.service';
 
 @Injectable()
 export class SessionsService {
@@ -316,6 +315,61 @@ export class SessionsService {
       }
       throw new InternalServerErrorException(
         'An unknown error occurred while closing session',
+      );
+    }
+  }
+
+  //SUPABASE
+  async getAllSessionsWithStats(
+    accessToken: string,
+    status?: 'active' | 'closed' | 'upcoming',
+  ) {
+    try {
+      const filter: Record<string, any> = {};
+
+      if (status === 'closed') {
+        filter.session_status = 'CLOSED';
+      } else if (status === 'active') {
+        filter.session_status = 'ACTIVE';
+      } else if (status === 'upcoming') {
+        filter.session_status = 'UPCOMING';
+      }
+
+      const sessions = await this.supabaseService.select(
+        accessToken,
+        'sessions',
+        {
+          columns: `
+        session_id,
+        session_name,
+        start_date,
+        end_date,
+        enrollment_deadline,
+        session_status,
+        session_courses(session_id),
+        session_students(session_id)
+      `,
+          filter,
+          orderBy: {
+            column: 'created_at',
+            ascending: false,
+          },
+        },
+      );
+
+      return sessions.map((s: any) => ({
+        sessionId: s.session_id,
+        sessionName: s.session_name,
+        startDate: s.start_date,
+        endDate: s.end_date,
+        enrollmentDeadline: s.enrollment_deadline,
+        sessionStatus: s.session_status,
+        numberOfCourses: s.session_courses?.length || 0,
+        numberOfStudents: s.session_students?.length || 0,
+      }));
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `Failed to retrieve sessions: ${error.message}`,
       );
     }
   }

@@ -1,14 +1,16 @@
 import { Module } from '@nestjs/common';
-import { SessionsService } from './services/sessions.service';
-import { EnrollmentsModule } from '../enrollments/enrollments.module';
 import { PrismaClient } from '@prisma/client';
-import { SupabaseService } from '../../supabase/supabase.service';
+import { SupabaseModule } from 'src/supabase/supabase.module';
+import { EnrollmentsModule } from '../enrollments/enrollments.module';
+import { SessionController } from './controllers/sessions.controller';
+import { SessionsService } from './services/sessions.service';
 
 @Module({
-  imports: [EnrollmentsModule],
+  imports: [EnrollmentsModule, SupabaseModule],
+  controllers: [SessionController],
+
   providers: [
     SessionsService,
-    SupabaseService,
     {
       provide: 'PRISMA_CLIENT',
       useValue: new PrismaClient(),
