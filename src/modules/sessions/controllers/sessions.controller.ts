@@ -10,7 +10,7 @@ export class SessionController {
   @Get()
   async findAllSessions(
     @Req() req: Request & { accessToken: string },
-    @Query('status') status: 'active' | 'closed' | 'upcoming',
+    @Query('status') status: 'active' | 'closed' | 'upcoming' | 'not_closed',
   ) {
     return this.sessionService.getAllSessionsWithStats(req.accessToken, status);
   }

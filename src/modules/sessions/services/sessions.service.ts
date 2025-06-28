@@ -322,7 +322,7 @@ export class SessionsService {
   //SUPABASE
   async getAllSessionsWithStats(
     accessToken: string,
-    status?: 'active' | 'closed' | 'upcoming',
+    status?: 'active' | 'closed' | 'upcoming' | 'not_closed',
   ) {
     try {
       const filter: Record<string, any> = {};
@@ -333,6 +333,8 @@ export class SessionsService {
         filter.session_status = 'ACTIVE';
       } else if (status === 'upcoming') {
         filter.session_status = 'UPCOMING';
+      } else if (status === 'not_closed') {
+        filter.session_status = { neq: 'CLOSED' };
       }
 
       const sessions = await this.supabaseService.select(
@@ -346,7 +348,7 @@ export class SessionsService {
         end_date,
         enrollment_deadline,
         session_status,
-        session_courses(session_id),
+        session_courses(session_id, status),
         session_students(session_id)
       `,
           filter,
@@ -357,16 +359,21 @@ export class SessionsService {
         },
       );
 
-      return sessions.map((s: any) => ({
-        sessionId: s.session_id,
-        sessionName: s.session_name,
-        startDate: s.start_date,
-        endDate: s.end_date,
-        enrollmentDeadline: s.enrollment_deadline,
-        sessionStatus: s.session_status,
-        numberOfCourses: s.session_courses?.length || 0,
-        numberOfStudents: s.session_students?.length || 0,
-      }));
+      return sessions.map((s: any) => {
+        const activeCourses =
+          s.session_courses?.filter((c: any) => c.status === 'OPEN') || [];
+
+        return {
+          sessionId: s.session_id,
+          sessionName: s.session_name,
+          startDate: s.start_date,
+          endDate: s.end_date,
+          enrollmentDeadline: s.enrollment_deadline,
+          sessionStatus: s.session_status,
+          numberOfOpenCourses: activeCourses.length,
+          numberOfStudents: s.session_students?.length || 0,
+        };
+      });
     } catch (error) {
       throw new InternalServerErrorException(
         `Failed to retrieve sessions: ${error.message}`,
