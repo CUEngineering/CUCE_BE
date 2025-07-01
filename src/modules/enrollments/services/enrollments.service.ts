@@ -530,9 +530,6 @@ export class EnrollmentsService {
       accessToken,
       'enrollments',
       {
-        // columns:
-        //   '*, students(*), courses(*), registrars(*),sessions(*),admins(*)',
-        // filter: {},
         columns: `
       *, 
       students(*, programs(*)), 

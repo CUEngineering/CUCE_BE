@@ -380,4 +380,132 @@ export class SessionsService {
       );
     }
   }
+  async getStudentsBySession(accessToken: string, sessionId: number) {
+    try {
+      const result = await this.supabaseService.select(
+        accessToken,
+        'session_students',
+        {
+          columns: `
+          student_id,
+          students(
+            student_id,
+            first_name,
+            last_name,
+            email,
+            profile_picture,
+            reg_number,
+            programs(program_id, program_name, program_type)
+          )
+        `,
+          filter: { session_id: sessionId },
+        },
+      );
+
+      return result.map((ss: any) => ({
+        studentId: ss.student_id,
+        firstName: ss.students?.first_name,
+        lastName: ss.students?.last_name,
+        email: ss.students?.email,
+        regNumber: ss.students?.reg_number,
+        profilePicture: ss.students?.profile_picture,
+        program: ss.students?.programs
+          ? {
+              programId: ss.students.programs.program_id,
+              name: ss.students.programs.program_name,
+              type: ss.students.programs.program_type,
+            }
+          : null,
+      }));
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `Failed to retrieve session students: ${error.message}`,
+      );
+    }
+  }
+  async getCoursesBySession(accessToken: string, sessionId: number) {
+    try {
+      const sessionCourses = await this.supabaseService.select(
+        accessToken,
+        'session_courses',
+        {
+          columns: `
+          session_id,
+          course_id,
+          status,
+          courses(
+            course_id,
+            course_title,
+            course_code,
+            course_credits,
+            course_type
+          )
+        `,
+          filter: { session_id: sessionId },
+        },
+      );
+
+      const enrollments = await this.supabaseService.select(
+        accessToken,
+        'enrollments',
+        {
+          columns: 'course_id',
+          filter: { session_id: sessionId },
+        },
+      );
+
+      const enrollmentCounts = enrollments.reduce(
+        (acc: Record<number, number>, e: any) => {
+          acc[e.course_id] = (acc[e.course_id] || 0) + 1;
+          return acc;
+        },
+        {},
+      );
+
+      return sessionCourses.map((sc: any) => ({
+        courseId: sc.course_id,
+        status: sc.status,
+        title: sc.courses?.course_title,
+        code: sc.courses?.course_code,
+        credits: sc.courses?.course_credits,
+        type: sc.courses?.course_type,
+        numberOfStudents: enrollmentCounts[sc.course_id] || 0,
+      }));
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `Failed to retrieve session courses: ${error.message}`,
+      );
+    }
+  }
+  async getSessionDetail(accessToken: string, sessionId: number) {
+    try {
+      const session = await this.supabaseService.select(
+        accessToken,
+        'sessions',
+        {
+          columns: `
+          session_id,
+          session_name,
+          start_date,
+          end_date,
+          enrollment_deadline,
+          session_status,
+          session_courses(session_id, status),
+        session_students(session_id),
+          created_at,
+          updated_at
+        `,
+          filter: { session_id: sessionId },
+        },
+      );
+
+      if (!session) throw new NotFoundException('Session not found');
+
+      return session[0];
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `Failed to retrieve session detail: ${error.message}`,
+      );
+    }
+  }
 }
