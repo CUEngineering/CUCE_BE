@@ -8,6 +8,7 @@ import {
 import { PrismaClient } from '@prisma/client';
 import { SupabaseService } from '../../../supabase/supabase.service';
 import { EnrollmentsService } from '../../enrollments/services/enrollments.service';
+import { CreateSessionDto, UpdateSessionDto } from '../dto/index.dto';
 
 @Injectable()
 export class SessionsService {
@@ -490,8 +491,8 @@ export class SessionsService {
           end_date,
           enrollment_deadline,
           session_status,
-          session_courses(session_id, status),
-        session_students(session_id),
+          session_courses(session_id, status, adjusted_capacity),
+        session_students(session_id, student_id),
           created_at,
           updated_at
         `,
@@ -505,6 +506,67 @@ export class SessionsService {
     } catch (error) {
       throw new InternalServerErrorException(
         `Failed to retrieve session detail: ${error.message}`,
+      );
+    }
+  }
+
+  async createSession(accessToken: string, dto: CreateSessionDto) {
+    try {
+      const result = await this.supabaseService.insert(
+        accessToken,
+        'sessions',
+        dto,
+      );
+
+      if (!result || result.length === 0) {
+        throw new BadRequestException('Failed to create session');
+      }
+
+      return result[0];
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `Failed to create session: ${error.message}`,
+      );
+    }
+  }
+  async updateSession(
+    accessToken: string,
+    sessionId: number,
+    dto: UpdateSessionDto,
+  ) {
+    try {
+      const result = await this.supabaseService.update(
+        accessToken,
+        'sessions',
+        dto,
+        { session_id: sessionId },
+      );
+
+      if (!result || result.length === 0) {
+        throw new NotFoundException('Session not found or update failed');
+      }
+
+      return result[0];
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `Failed to update session: ${error.message}`,
+      );
+    }
+  }
+  async deleteSession(accessToken: string, sessionId: number): Promise<void> {
+    try {
+      const result = await this.supabaseService.delete(
+        accessToken,
+        'sessions',
+        { session_id: sessionId },
+      );
+
+      if (!result || result.length === 0) {
+        throw new NotFoundException('Session not found or already deleted');
+      }
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `Failed to delete session: ${error.message}`,
       );
     }
   }

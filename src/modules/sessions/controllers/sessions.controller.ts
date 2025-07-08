@@ -1,13 +1,20 @@
 import {
+  Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
+  Patch,
+  Post,
   Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from 'src/supabase/auth.guard';
+import { CreateSessionDto, UpdateSessionDto } from '../dto/index.dto';
 import { SessionsService } from '../services/sessions.service';
 
 @Controller('sessions')
@@ -45,5 +52,31 @@ export class SessionController {
     @Param('id', ParseIntPipe) id: number,
   ) {
     return this.sessionService.getStudentsBySession(req.accessToken, id);
+  }
+
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  async createSession(
+    @Body() createDto: CreateSessionDto,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.sessionService.createSession(req.accessToken, createDto);
+  }
+  @Patch(':id')
+  @HttpCode(HttpStatus.OK)
+  async updateSession(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateDto: UpdateSessionDto,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.sessionService.updateSession(req.accessToken, id, updateDto);
+  }
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteSession(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: Request & { accessToken: string },
+  ): Promise<void> {
+    await this.sessionService.deleteSession(req.accessToken, id);
   }
 }
