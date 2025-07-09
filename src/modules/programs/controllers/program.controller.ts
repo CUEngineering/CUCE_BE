@@ -1,21 +1,21 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
-  Post,
-  Delete,
-  UseGuards,
-  Req,
   ParseIntPipe,
   Patch,
+  Post,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
-import { ProgramService } from '../services/program.service';
-import { CreateProgramDto } from '../dto/create-program.dto';
-import { AddCoursesToProgramDto } from '../dto/add-courses-to-program.dto';
-import { UpdateProgramDto } from '../dto/update-program.dto';
-import { AuthGuard } from '../../../supabase/auth.guard';
 import { Request } from 'express';
+import { AuthGuard } from '../../../supabase/auth.guard';
+import { AddCoursesToProgramDto } from '../dto/add-courses-to-program.dto';
+import { CreateProgramDto } from '../dto/create-program.dto';
+import { UpdateProgramDto } from '../dto/update-program.dto';
+import { ProgramService } from '../services/program.service';
 import { ProgramCourseWithEnrollmentStatus } from '../types/program.types';
 
 @Controller('programs')
@@ -30,10 +30,15 @@ export class ProgramController {
   ) {
     return this.programService.create(createProgramDto, req.accessToken);
   }
-
+  // v1
+  // @Get()
+  // async findAll(@Req() req: Request & { accessToken: string }) {
+  //   return this.programService.findAll(req.accessToken);
+  // }
+  // v2
   @Get()
   async findAll(@Req() req: Request & { accessToken: string }) {
-    return this.programService.findAll(req.accessToken);
+    return this.programService.getAllProgramsWithStats(req.accessToken);
   }
 
   @Get(':id')

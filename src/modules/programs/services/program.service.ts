@@ -1,22 +1,21 @@
 import {
-  Injectable,
-  Req,
-  NotFoundException,
   BadRequestException,
+  Injectable,
   InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
-import { CreateProgramDto } from '../dto/create-program.dto';
-import { AddCoursesToProgramDto } from '../dto/add-courses-to-program.dto';
-import { UpdateProgramDto } from '../dto/update-program.dto';
 import { SupabaseService } from '../../../supabase/supabase.service';
+import { AddCoursesToProgramDto } from '../dto/add-courses-to-program.dto';
+import { CreateProgramDto } from '../dto/create-program.dto';
+import { UpdateProgramDto } from '../dto/update-program.dto';
 import {
   ProgramCourse,
   ProgramCourseWithEnrollmentStatus,
-  Student,
-  RawProgramCourse,
-  StudentWithDetails,
   ProgramStudent,
   ProgramWithStudentCount,
+  RawProgramCourse,
+  Student,
+  StudentWithDetails,
 } from '../types/program.types';
 
 @Injectable()
@@ -31,6 +30,7 @@ export class ProgramService {
     return this.supabaseService.insert(accessToken, 'programs', programData);
   }
 
+  // v1
   async findAll(accessToken: string): Promise<ProgramWithStudentCount[]> {
     try {
       // Get all programs
@@ -81,6 +81,48 @@ export class ProgramService {
     }
 
     return result[0];
+  }
+  // v2
+  async getAllProgramsWithStats(accessToken: string) {
+    try {
+      const programs = await this.supabaseService.select(
+        accessToken,
+        'programs',
+        {
+          columns: `
+          program_id,
+          program_name,
+          program_type,
+          total_credits,
+          created_at,
+          updated_at,
+          program_courses(program_id),
+          students(program_id)
+        `,
+          orderBy: {
+            column: 'created_at',
+            ascending: false,
+          },
+        },
+      );
+
+      return programs.map((p: any) => {
+        return {
+          programId: p.program_id,
+          programName: p.program_name,
+          programType: p.program_type,
+          totalCredits: p.total_credits,
+          createdAt: p.created_at,
+          updatedAt: p.updated_at,
+          numberOfCourses: p.program_courses?.length || 0,
+          numberOfStudents: p.students?.length || 0,
+        };
+      });
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `Failed to retrieve programs: ${error.message}`,
+      );
+    }
   }
 
   async update(

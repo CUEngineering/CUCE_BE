@@ -570,4 +570,25 @@ export class SessionsService {
       );
     }
   }
+  async removeStudentFromSession(
+    accessToken: string,
+    sessionId: number,
+    studentId: number,
+  ): Promise<void> {
+    try {
+      const result = await this.supabaseService.delete(
+        accessToken,
+        'session_students',
+        { session_id: sessionId, student_id: studentId },
+      );
+
+      if (!result || result.length === 0) {
+        throw new NotFoundException('Student not found in session');
+      }
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `Failed to remove student from session: ${error.message}`,
+      );
+    }
+  }
 }

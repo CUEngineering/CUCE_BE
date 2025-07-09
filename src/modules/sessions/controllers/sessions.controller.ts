@@ -79,4 +79,16 @@ export class SessionController {
   ): Promise<void> {
     await this.sessionService.deleteSession(req.accessToken, id);
   }
+  @Delete(':sessionId/students/:studentId')
+  async removeStudentFromSession(
+    @Param('sessionId') sessionId: number,
+    @Param('studentId') studentId: number,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.sessionService.removeStudentFromSession(
+      req.accessToken,
+      sessionId,
+      studentId,
+    );
+  }
 }
