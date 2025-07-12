@@ -1,22 +1,24 @@
 import {
+  Body,
   Controller,
   Get,
-  Post,
-  Body,
-  Patch,
-  Param,
-  Delete,
   HttpCode,
   HttpStatus,
-  UseGuards,
+  Param,
+  Patch,
+  Post,
   Req,
+  UploadedFile,
+  UseGuards,
 } from '@nestjs/common';
+import { Request } from 'express';
+import type { File as MulterFile } from 'multer';
 import { AuthGuard } from '../../../supabase/auth.guard';
-import { RegistrarsService } from '../services/registrars.service';
+import { AcceptInviteDto } from '../dto/accept-registrar.dto';
 import { InviteRegistrarsDto } from '../dto/invite-registrar.dto';
 import { UpdateRegistrarDto } from '../dto/update-registrar.dto';
 import { InvitationResponse } from '../interfaces/invitation.interface';
-import { Request } from 'express';
+import { RegistrarsService } from '../services/registrars.service';
 
 interface InvitationResult {
   email: string;
@@ -145,5 +147,13 @@ export class RegistrarsController {
     @Req() req: Request & { accessToken: string },
   ) {
     return this.registrarsService.getRegistrarStats(id, req.accessToken);
+  }
+
+  @Post('accept-invite')
+  async acceptInvite(
+    @Body() dto: AcceptInviteDto,
+    @UploadedFile() file?: MulterFile,
+  ) {
+    return this.registrarsService.acceptInvite(dto, file);
   }
 }

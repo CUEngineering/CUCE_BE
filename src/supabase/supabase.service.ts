@@ -274,7 +274,6 @@ export class SupabaseService {
 
       const userId = data.user.id;
 
-      // Get user role
       const { data: userRoleData, error: roleError } = await this.adminClient
         .from('user_roles')
         .select('role')

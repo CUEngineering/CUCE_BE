@@ -1,27 +1,33 @@
 import {
-  Injectable,
-  NotFoundException,
-  InternalServerErrorException,
   BadRequestException,
+  ConflictException,
+  Injectable,
+  InternalServerErrorException,
   Logger,
+  NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
+import type { File as MulterFile } from 'multer';
 import { SupabaseService } from '../../../supabase/supabase.service';
 import { UpdateRegistrarDto } from '../dto/update-registrar.dto';
 import {
   Invitation,
   InvitationResponse,
 } from '../interfaces/invitation.interface';
-import { randomUUID } from 'crypto';
 import {
-  Registrar,
   Enrollment,
-  RegistrarStats,
+  Registrar,
   RegistrarResponse,
+  RegistrarStats,
 } from '../types/registrar.types';
 
 import { Inject } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaClient } from '@prisma/client';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { sendEmail } from 'src/utils/email.helper';
+import { AcceptInviteDto } from '../dto/accept-registrar.dto';
 
 function safeUuidv4(): string {
   try {
@@ -37,12 +43,33 @@ interface EmailDto {
 
 @Injectable()
 export class RegistrarsService {
+  private adminClient: SupabaseClient;
   private readonly logger = new Logger(RegistrarsService.name);
 
   constructor(
+    @Inject('SUPABASE_CLIENT')
+    private readonly supabase: SupabaseClient,
     private readonly supabaseService: SupabaseService,
     @Inject('PRISMA_CLIENT') private readonly prisma: PrismaClient,
-  ) {}
+    private readonly configService: ConfigService,
+  ) {
+    // Initialize admin client with service role key
+    const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
+    const supabaseServiceKey = this.configService.get<string>(
+      'SUPABASE_SERVICE_ROLE_KEY',
+    );
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error('Supabase URL and Service Role Key must be provided');
+    }
+
+    this.adminClient = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+  }
 
   async findAll(accessToken: string): Promise<Registrar[]> {
     const result = (await this.supabaseService.select(
@@ -454,5 +481,152 @@ export class RegistrarsService {
       success: true,
       message: `Pending invitation for ${email} has been deleted.`,
     };
+  }
+
+  async acceptInvite(dto: AcceptInviteDto, file?: MulterFile) {
+    const { email, password, first_name, last_name, token } = dto;
+
+    try {
+      const { data: invitation, error: invitationError } =
+        await this.adminClient
+          .from('invitations')
+          .select('*')
+          .eq('email', email)
+          .eq('token', token)
+          .eq('status', 'PENDING')
+          .single();
+
+      if (invitationError || !invitation) {
+        throw new UnauthorizedException('Invalid or expired invitation');
+      }
+      const invitationDate = new Date(invitation.created_at);
+      const expiryDate = new Date(
+        invitationDate.getTime() + 7 * 24 * 60 * 60 * 1000,
+      );
+      if (new Date() > expiryDate) {
+        throw new UnauthorizedException('Invitation has expired');
+      }
+
+      const { data: existingRegistrar } = await this.adminClient
+        .from('registrars')
+        .select('email')
+        .eq('email', email)
+        .single();
+
+      if (existingRegistrar) {
+        throw new ConflictException('Registrar with this email already exists');
+      }
+      const { data: authData, error: authError } =
+        await this.supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              email_confirmed: true,
+            },
+          },
+        });
+
+      if (authError) {
+        if (authError.message.includes('already in use')) {
+          throw new ConflictException('Email is already registered');
+        }
+        throw new InternalServerErrorException(
+          `Auth user creation failed: ${authError.message}`,
+        );
+      }
+
+      if (!authData.user) {
+        throw new InternalServerErrorException('User creation failed');
+      }
+
+      const userId = authData.user.id;
+      let profileUrl = '';
+      if (file) {
+        const uploadResult = await this.uploadFileToStorage(file, userId);
+        profileUrl = uploadResult.url;
+      }
+
+      const { data: registrar, error: registrarError } = await this.adminClient
+        .from('registrars')
+        .insert({
+          first_name: first_name,
+          last_name: last_name,
+          email: email,
+          profile_picture: profileUrl || null,
+          user_id: userId,
+          updated_at: new Date().toISOString(),
+        })
+        .select('*')
+        .single();
+
+      if (registrarError) {
+        await this.supabase.auth.admin.deleteUser(userId);
+        throw new InternalServerErrorException(
+          `Registrar creation failed: ${registrarError.message}`,
+        );
+      }
+
+      const { error: roleError } = await this.adminClient
+        .from('user_roles')
+        .insert({
+          user_id: userId,
+          role: 'REGISTRAR',
+        });
+      if (roleError) {
+        await this.adminClient
+          .from('registrars')
+          .delete()
+          .eq('user_id', userId);
+        await this.supabase.auth.admin.deleteUser(userId);
+        throw new InternalServerErrorException(
+          `User role creation failed: ${roleError.message}`,
+        );
+      }
+      const { error: updateInvitationError } = await this.adminClient
+        .from('invitations')
+        .update({
+          status: 'ACCEPTED',
+          accepted_at: new Date().toISOString(),
+        })
+        .eq('id', invitation.id);
+
+      if (updateInvitationError) {
+        console.error(
+          'Failed to update invitation status:',
+          updateInvitationError,
+        );
+      }
+      return {
+        user: {
+          registrar_id: registrar.registrar_id,
+          first_name: registrar.first_name,
+          last_name: registrar.last_name,
+          email: registrar.email,
+          profilePicture: registrar.profile_picture,
+          user_id: registrar.user_id,
+        },
+        session: authData.session,
+        role: 'REGISTRAR',
+      };
+    } catch (error) {
+      if (
+        error instanceof ConflictException ||
+        error instanceof UnauthorizedException ||
+        error instanceof InternalServerErrorException
+      ) {
+        throw error;
+      }
+
+      throw new InternalServerErrorException('Failed to accept invitation');
+    }
+  }
+
+  async uploadFileToStorage(file: MulterFile, userId: string) {
+    const filePath = `avatars/registrars/${userId}-${Date.now()}-${file.originalname}`;
+
+    ///store image
+
+    return { url: 'https://mayowafadeni.vercel.app/may.jpg' };
   }
 }
