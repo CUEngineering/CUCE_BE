@@ -591,4 +591,33 @@ export class SessionsService {
       );
     }
   }
+
+  async updateCourseStatus(
+    accessToken: string,
+    sessionId: number,
+    courseId: number,
+    status: string,
+  ) {
+    try {
+      const result = await this.supabaseService.update(
+        accessToken,
+        'session_courses',
+        { status },
+        {
+          session_id: sessionId,
+          course_id: courseId,
+        },
+      );
+
+      if (!result || result.length === 0) {
+        throw new NotFoundException('Course not found or update failed');
+      }
+
+      return { message: 'Course status updated successfully' };
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `Failed to update course status: ${error.message}`,
+      );
+    }
+  }
 }

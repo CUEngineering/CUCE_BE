@@ -91,4 +91,19 @@ export class SessionController {
       studentId,
     );
   }
+
+  @Patch(':sessionId/courses/:courseId/status')
+  async updateCourseStatus(
+    @Req() req: Request & { accessToken: string },
+    @Param('sessionId', ParseIntPipe) sessionId: number,
+    @Param('courseId', ParseIntPipe) courseId: number,
+    @Body('status') status: string,
+  ) {
+    return this.sessionService.updateCourseStatus(
+      req.accessToken,
+      sessionId,
+      courseId,
+      status,
+    );
+  }
 }
