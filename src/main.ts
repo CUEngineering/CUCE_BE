@@ -47,11 +47,12 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // const port = configService.get<number>('PORT') || 3000;
-  const port = process.env.PORT || configService.get<number>('PORT') || 3000;
+  const port = configService.get<number>('PORT') || 3000;
   app.useGlobalInterceptors(new ResponseInterceptor());
 
-  await app.listen(port);
+  // await app.listen(port);
+  //render health check
+  await app.listen(process.env.PORT!);
 
   const src = path.join(__dirname, '..', 'templates');
   const dest = path.join(__dirname, 'templates');
