@@ -39,22 +39,26 @@ class EnvironmentVariables {
   RESEND_DOMAIN: string;
 
   @IsString()
-  APP_BASE_URL: string;
+  RESEND_EMAIL_FROM: string;
 
   @IsString()
-  RESEND_EMAIL_FROM: string;
+  APP_BASE_URL: string;
 
   @IsString()
   JWT_SECRET: string;
 
   @IsString()
   JWT_EXPIRATION: string;
+
+  @IsString()
+  CORS_ORIGINS: string;
 }
 
 export function validate(config: Record<string, unknown>) {
   const validatedConfig = plainToInstance(EnvironmentVariables, config, {
     enableImplicitConversion: true,
   });
+
   const errors = validateSync(validatedConfig, {
     skipMissingProperties: false,
   });
@@ -62,5 +66,6 @@ export function validate(config: Record<string, unknown>) {
   if (errors.length > 0) {
     throw new Error(errors.toString());
   }
+
   return validatedConfig;
 }
