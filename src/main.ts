@@ -8,6 +8,7 @@ import { ResponseInterceptor } from './interceptors/response.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const configService = app.get(ConfigService);
 
   // Enable validation globally
   app.useGlobalPipes(
@@ -18,15 +19,17 @@ async function bootstrap() {
     }),
   );
 
+  const apiVersion = configService.get<string>('API_VERSION') || 'v1';
+  const globalPrefix = `api/${apiVersion}`;
+
   // Set global prefix
-  app.setGlobalPrefix('api/v1', {
+  app.setGlobalPrefix(globalPrefix, {
     exclude: [
       { path: '', method: RequestMethod.GET },
       { path: 'test-db', method: RequestMethod.GET },
+      { path: 'health', method: RequestMethod.GET },
     ],
   });
-
-  const configService = app.get(ConfigService);
 
   const allowedOrigins = configService
     .get<string>('CORS_ORIGINS')
@@ -50,9 +53,7 @@ async function bootstrap() {
   const port = configService.get<number>('PORT') || 3000;
   app.useGlobalInterceptors(new ResponseInterceptor());
 
-  // await app.listen(port);
-  //render health check
-  await app.listen(process.env.PORT!);
+  await app.listen(port);
 
   const src = path.join(__dirname, '..', 'templates');
   const dest = path.join(__dirname, 'templates');

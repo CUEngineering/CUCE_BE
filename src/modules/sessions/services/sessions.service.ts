@@ -602,11 +602,12 @@ export class SessionsService {
       const result = await this.supabaseService.update(
         accessToken,
         'session_courses',
-        { status },
+
         {
           session_id: sessionId,
           course_id: courseId,
         },
+        { status },
       );
 
       if (!result || result.length === 0) {
