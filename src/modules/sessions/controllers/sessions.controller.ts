@@ -106,4 +106,17 @@ export class SessionController {
       status,
     );
   }
+
+  @Post(':sessionId/students')
+  async addStudentsToSession(
+    @Param('sessionId') sessionId: number,
+    @Body('studentIds') studentIds: number[],
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.sessionService.addStudentsToSession(
+      req.accessToken,
+      sessionId,
+      studentIds,
+    );
+  }
 }

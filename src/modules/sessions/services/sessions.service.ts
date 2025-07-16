@@ -621,4 +621,34 @@ export class SessionsService {
       );
     }
   }
+
+  async addStudentsToSession(
+    accessToken: string,
+    sessionId: number,
+    studentIds: number[],
+  ): Promise<void> {
+    try {
+      const payload = studentIds.map((studentId) => ({
+        session_id: sessionId,
+        student_id: studentId,
+        updated_at: new Date().toISOString(),
+      }));
+
+      const result = await this.supabaseService.insert(
+        accessToken,
+        'session_students',
+        payload,
+      );
+
+      if (!result || result.length === 0) {
+        throw new InternalServerErrorException(
+          'Failed to add students to session',
+        );
+      }
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `Error adding students to session: ${error.message}`,
+      );
+    }
+  }
 }
