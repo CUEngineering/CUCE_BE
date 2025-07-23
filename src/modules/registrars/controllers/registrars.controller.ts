@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import type { File as MulterFile } from 'multer';
+import { Public } from 'src/common/public.decorator';
 import { AuthGuard } from '../../../supabase/auth.guard';
 import { AcceptInviteDto } from '../dto/accept-registrar.dto';
 import { InviteRegistrarsDto } from '../dto/invite-registrar.dto';
@@ -148,7 +149,7 @@ export class RegistrarsController {
   ) {
     return this.registrarsService.getRegistrarStats(id, req.accessToken);
   }
-
+  @Public()
   @Post('accept-invite')
   async acceptInvite(
     @Body() dto: AcceptInviteDto,

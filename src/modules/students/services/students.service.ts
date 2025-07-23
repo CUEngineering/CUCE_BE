@@ -681,9 +681,9 @@ export class StudentsService {
         .or(`email.eq.${email},reg_number.eq.${reg_number}`)
         .maybeSingle();
 
-      if (existingStudent) {
+      if (!existingStudent) {
         throw new ConflictException(
-          'Student with this email or registration number already exists',
+          'Student with this email or registration number not found',
         );
       }
 
@@ -720,15 +720,15 @@ export class StudentsService {
 
       const { data: student, error: studentError } = await this.adminClient
         .from('students')
-        .insert({
+        .update({
           first_name,
           last_name,
           email,
-          reg_number,
           profile_picture: profileUrl || null,
           user_id: userId,
           updated_at: new Date().toISOString(),
         })
+        .eq('reg_number', reg_number)
         .select('*')
         .single();
 
@@ -744,11 +744,12 @@ export class StudentsService {
         .insert({
           user_id: userId,
           role: 'STUDENT',
+          updated_at: new Date().toISOString(),
         });
 
       if (roleError) {
-        await this.adminClient.from('students').delete().eq('user_id', userId);
-        await this.supabase.auth.admin.deleteUser(userId);
+        // await this.adminClient.from('students').delete().eq('user_id', userId);
+        // await this.supabase.auth.admin.deleteUser(userId);
         throw new InternalServerErrorException(
           `User role creation failed: ${roleError.message}`,
         );
@@ -758,7 +759,7 @@ export class StudentsService {
         .from('invitations')
         .update({
           status: 'ACCEPTED',
-          accepted_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         })
         .eq('id', invitation.id);
 

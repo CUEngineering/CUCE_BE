@@ -12,6 +12,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Request } from 'express';
 import type { File as MulterFile } from 'multer';
+import { Public } from 'src/common/public.decorator';
 import { AuthGuard } from '../../../supabase/auth.guard';
 import {
   AcceptStudentInviteDto,
@@ -86,7 +87,8 @@ export class StudentsController {
     return this.studentsService.getStudentStats(id, req.accessToken);
   }
 
-  @UseInterceptors(FileInterceptor('file'))
+  @Public()
+  @UseInterceptors(FileInterceptor('profile_picture'))
   @Post('accept-invite')
   async acceptStudentInvite(
     @Body() dto: AcceptStudentInviteDto,

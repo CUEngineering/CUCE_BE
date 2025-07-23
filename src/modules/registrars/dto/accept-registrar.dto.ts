@@ -17,7 +17,5 @@ export class AcceptInviteDto {
   last_name: string;
 
   @IsString()
-  profile_picture: string;
-  @IsString()
   token: string;
 }
