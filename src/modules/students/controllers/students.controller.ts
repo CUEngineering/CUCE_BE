@@ -1,18 +1,23 @@
 import {
+  Body,
   Controller,
   Get,
-  Post,
-  Body,
-  Patch,
   Param,
-  UseGuards,
+  Post,
   Req,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
-import { AuthGuard } from '../../../supabase/auth.guard';
-import { StudentsService } from '../services/students.service';
-import { InviteStudentDto } from '../dto/invite-student.dto';
-import { UpdateStudentDto } from '../dto/update-student.dto';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Request } from 'express';
+import type { File as MulterFile } from 'multer';
+import { AuthGuard } from '../../../supabase/auth.guard';
+import {
+  AcceptStudentInviteDto,
+  InviteStudentDto,
+} from '../dto/invite-student.dto';
+import { StudentsService } from '../services/students.service';
 
 interface InvitationResult {
   email: string;
@@ -79,5 +84,22 @@ export class StudentsController {
     @Req() req: Request & { accessToken: string },
   ) {
     return this.studentsService.getStudentStats(id, req.accessToken);
+  }
+
+  @UseInterceptors(FileInterceptor('file'))
+  @Post('accept-invite')
+  async acceptStudentInvite(
+    @Body() dto: AcceptStudentInviteDto,
+    @UploadedFile() file?: MulterFile,
+  ) {
+    const result = await this.studentsService.acceptStudentInvite(dto, file);
+
+    return {
+      success: true,
+      message: 'Invitation accepted successfully',
+      user: result.user,
+      session: result.session,
+      role: result.role,
+    };
   }
 }

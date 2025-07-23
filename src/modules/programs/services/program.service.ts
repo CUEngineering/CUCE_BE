@@ -5,7 +5,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { SupabaseService } from '../../../supabase/supabase.service';
-import { AddCoursesToProgramDto } from '../dto/add-courses-to-program.dto';
+import {
+  AddCoursesToProgramDto,
+  CreateProgramWithCoursesDto,
+} from '../dto/add-courses-to-program.dto';
 import { CreateProgramDto } from '../dto/create-program.dto';
 import { UpdateProgramDto } from '../dto/update-program.dto';
 import {
@@ -234,10 +237,34 @@ export class ProgramService {
         }),
       ) as ProgramCourse[];
 
-      // Add hasEnrollments flag and total_enrollments to each course
-      const coursesWithEnrollmentStatus = await Promise.all(
+      // Get course details and enrollment information
+      const coursesWithDetails = await Promise.all(
         programCourses.map(async (pc) => {
           try {
+            // Fetch course details
+            const courseDetails = await this.supabaseService.select(
+              accessToken,
+              'courses',
+              {
+                columns: 'course_id, course_title, course_code, course_credits',
+                filter: { course_id: pc.course_id },
+              },
+            );
+
+            if (!courseDetails || courseDetails.length === 0) {
+              // If course not found, return basic info with defaults
+              return {
+                ...pc,
+                course_title: 'Unknown Course',
+                course_code: 'N/A',
+                course_credits: 0,
+                hasEnrollments: false,
+                total_enrollments: 0,
+              };
+            }
+
+            const course = courseDetails[0] as any;
+
             const hasEnrollments = await this.checkCourseHasEnrollments(
               id,
               pc.course_id,
@@ -253,42 +280,46 @@ export class ProgramService {
               },
             );
 
-            if (!students || !Array.isArray(students)) {
-              return {
-                ...pc,
-                hasEnrollments,
-                total_enrollments: 0,
-              };
-            }
+            let totalEnrollments = 0;
 
-            const studentIds = (students as unknown as Student[]).map(
-              (student) => student.student_id,
-            );
+            if (students && Array.isArray(students)) {
+              const studentIds = (students as unknown as Student[]).map(
+                (student) => student.student_id,
+              );
 
-            const enrollments = await this.supabaseService.select(
-              accessToken,
-              'enrollments',
-              {
-                filter: {
-                  course_id: pc.course_id,
-                  student_id: studentIds,
-                  enrollment_status: ['APPROVED', 'ACTIVE', 'COMPLETED'],
+              const enrollments = await this.supabaseService.select(
+                accessToken,
+                'enrollments',
+                {
+                  filter: {
+                    course_id: pc.course_id,
+                    student_id: studentIds,
+                    enrollment_status: ['APPROVED', 'ACTIVE', 'COMPLETED'],
+                  },
                 },
-              },
-            );
+              );
 
-            return {
-              ...pc,
-              hasEnrollments,
-              total_enrollments:
+              totalEnrollments =
                 enrollments && Array.isArray(enrollments)
                   ? enrollments.length
-                  : 0,
-            };
-          } catch (error) {
-            // If we can't check enrollments for a course, mark it as having enrollments to be safe
+                  : 0;
+            }
+
             return {
               ...pc,
+              course_title: course.course_title,
+              course_code: course.course_code,
+              course_credits: course.course_credits,
+              hasEnrollments,
+              total_enrollments: totalEnrollments,
+            };
+          } catch (error) {
+            // If we can't fetch course details or check enrollments, return safe defaults
+            return {
+              ...pc,
+              course_title: 'Error Loading Course',
+              course_code: 'ERROR',
+              course_credits: 0,
               hasEnrollments: true,
               total_enrollments: 0,
             };
@@ -296,7 +327,7 @@ export class ProgramService {
         }),
       );
 
-      return coursesWithEnrollmentStatus;
+      return coursesWithDetails;
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;
@@ -453,5 +484,51 @@ export class ProgramService {
     return this.supabaseService.delete(accessToken, 'programs', {
       program_id: id,
     });
+  }
+
+  async createWithCourses(
+    dto: CreateProgramWithCoursesDto,
+    accessToken: string,
+  ) {
+    try {
+      const { course_ids, ...programFields } = dto;
+
+      const programData = {
+        ...programFields,
+        updated_at: new Date().toISOString(),
+      };
+
+      // Insert program and get the inserted ID
+      const programInsert = await this.supabaseService.insert(
+        accessToken,
+        'programs',
+        programData,
+      );
+      const program = programInsert?.[0];
+      if (!program) {
+        throw new Error('Program creation failed');
+      }
+
+      const programCourses = course_ids.map((course_id) => ({
+        program_id: program.program_id,
+        course_id,
+        updated_at: new Date().toISOString(),
+      }));
+
+      // Insert into program_courses
+      await this.supabaseService.insert(
+        accessToken,
+        'program_courses',
+        programCourses,
+      );
+
+      return {
+        message: 'Program and course links created successfully',
+        program,
+        course_ids,
+      };
+    } catch (error) {
+      console.error('Error creating program with courses:', error);
+    }
   }
 }

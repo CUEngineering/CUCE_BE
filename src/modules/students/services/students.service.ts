@@ -1,22 +1,33 @@
 import {
-  Injectable,
-  NotFoundException,
-  InternalServerErrorException,
   BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  InternalServerErrorException,
   Logger,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { SupabaseService } from '../../../supabase/supabase.service';
-import { UpdateStudentDto } from '../dto/update-student.dto';
-import { InviteStudentDto } from '../dto/invite-student.dto';
+import type { File as MulterFile } from 'multer';
+
+import { ConfigService } from '@nestjs/config';
+import { EnrollmentStatus, InvitationStatus, UserType } from '@prisma/client';
+import { SupabaseClient, createClient } from '@supabase/supabase-js';
 import { randomUUID } from 'crypto';
+import { RegistrarsService } from 'src/modules/registrars/services/registrars.service';
+import { sendEmail } from 'src/utils/email.helper';
+import { SupabaseService } from '../../../supabase/supabase.service';
 import {
-  Student,
-  StudentStats,
-  StudentResponse,
+  AcceptStudentInviteDto,
+  InviteStudentDto,
+} from '../dto/invite-student.dto';
+import { UpdateStudentDto } from '../dto/update-student.dto';
+import {
   SessionResponse,
+  Student,
+  StudentResponse,
+  StudentStats,
 } from '../types/student.types';
-import { InvitationStatus, UserType, EnrollmentStatus } from '@prisma/client';
 
 function safeUuidv4(): string {
   try {
@@ -28,9 +39,31 @@ function safeUuidv4(): string {
 
 @Injectable()
 export class StudentsService {
-  private readonly logger = new Logger(StudentsService.name);
+  private adminClient: SupabaseClient;
+  private readonly logger = new Logger(RegistrarsService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    @Inject('SUPABASE_CLIENT')
+    private readonly supabase: SupabaseClient,
+    private readonly supabaseService: SupabaseService,
+    private readonly configService: ConfigService,
+  ) {
+    const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
+    const supabaseServiceKey = this.configService.get<string>(
+      'SUPABASE_SERVICE_ROLE_KEY',
+    );
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error('Supabase URL and Service Role Key must be provided');
+    }
+
+    this.adminClient = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+  }
 
   async findAll(accessToken: string): Promise<Student[]> {
     try {
@@ -312,7 +345,17 @@ export class StudentsService {
           'Failed to create student record',
         );
       }
-
+      await sendEmail({
+        to: email,
+        subject: 'You have been invited as a Student',
+        template: 'student-invite.html',
+        context: {
+          email,
+          reg_number,
+          token,
+          link: `${process.env.APP_BASE_URL}/accept-student?token=${token}`,
+        },
+      });
       return {
         success: true,
         message: `Invitation sent to ${email}`,
@@ -605,5 +648,162 @@ export class StudentsService {
         student_id,
       ),
     }));
+  }
+
+  async acceptStudentInvite(dto: AcceptStudentInviteDto, file?: MulterFile) {
+    const { email, password, first_name, last_name, reg_number, token } = dto;
+
+    try {
+      const { data: invitation, error: invitationError } =
+        await this.adminClient
+          .from('invitations')
+          .select('*')
+          .eq('email', email)
+          .eq('token', token)
+          .eq('status', 'PENDING')
+          .single();
+
+      if (invitationError || !invitation) {
+        throw new UnauthorizedException('Invalid or expired invitation');
+      }
+
+      const invitationDate = new Date(invitation.created_at);
+      const expiryDate = new Date(
+        invitationDate.getTime() + 7 * 24 * 60 * 60 * 1000,
+      );
+      if (new Date() > expiryDate) {
+        throw new UnauthorizedException('Invitation has expired');
+      }
+
+      const { data: existingStudent } = await this.adminClient
+        .from('students')
+        .select('email')
+        .or(`email.eq.${email},reg_number.eq.${reg_number}`)
+        .maybeSingle();
+
+      if (existingStudent) {
+        throw new ConflictException(
+          'Student with this email or registration number already exists',
+        );
+      }
+
+      const { data: authData, error: authError } =
+        await this.supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              email_confirmed: true,
+            },
+          },
+        });
+
+      if (authError) {
+        if (authError.message.includes('already in use')) {
+          throw new ConflictException('Email is already registered');
+        }
+        throw new InternalServerErrorException(
+          `Auth user creation failed: ${authError.message}`,
+        );
+      }
+
+      if (!authData.user) {
+        throw new InternalServerErrorException('User creation failed');
+      }
+
+      const userId = authData.user.id;
+      let profileUrl = '';
+      if (file) {
+        const uploadResult = await this.uploadFileToStorage(file, userId);
+        profileUrl = uploadResult.url;
+      }
+
+      const { data: student, error: studentError } = await this.adminClient
+        .from('students')
+        .insert({
+          first_name,
+          last_name,
+          email,
+          reg_number,
+          profile_picture: profileUrl || null,
+          user_id: userId,
+          updated_at: new Date().toISOString(),
+        })
+        .select('*')
+        .single();
+
+      if (studentError) {
+        await this.supabase.auth.admin.deleteUser(userId);
+        throw new InternalServerErrorException(
+          `Student creation failed: ${studentError.message}`,
+        );
+      }
+
+      const { error: roleError } = await this.adminClient
+        .from('user_roles')
+        .insert({
+          user_id: userId,
+          role: 'STUDENT',
+        });
+
+      if (roleError) {
+        await this.adminClient.from('students').delete().eq('user_id', userId);
+        await this.supabase.auth.admin.deleteUser(userId);
+        throw new InternalServerErrorException(
+          `User role creation failed: ${roleError.message}`,
+        );
+      }
+
+      const { error: updateInvitationError } = await this.adminClient
+        .from('invitations')
+        .update({
+          status: 'ACCEPTED',
+          accepted_at: new Date().toISOString(),
+        })
+        .eq('id', invitation.id);
+
+      if (updateInvitationError) {
+        this.logger.error(
+          'Failed to update invitation status:',
+          updateInvitationError.message,
+        );
+      }
+
+      return {
+        user: {
+          student_id: student.student_id,
+          first_name: student.first_name,
+          last_name: student.last_name,
+          email: student.email,
+          reg_number: student.reg_number,
+          profilePicture: student.profile_picture,
+          user_id: student.user_id,
+        },
+        session: authData.session,
+        role: 'STUDENT',
+      };
+    } catch (error) {
+      if (
+        error instanceof ConflictException ||
+        error instanceof UnauthorizedException ||
+        error instanceof InternalServerErrorException
+      ) {
+        throw error;
+      }
+
+      throw new InternalServerErrorException(
+        'Failed to accept student invitation',
+      );
+    }
+  }
+
+  async uploadFileToStorage(file: MulterFile, userId: string) {
+    const filePath = `avatars/registrars/${userId}-${Date.now()}-${file.originalname}`;
+
+    ///store image
+
+    return {
+      url: 'https://cuce-fe.vercel.app/_nuxt/CU_Logo_Full.gxABYN_K.svg',
+    };
   }
 }

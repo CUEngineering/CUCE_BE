@@ -651,4 +651,52 @@ export class SessionsService {
       );
     }
   }
+
+  // session.service.ts
+  async createSessionWithStudents(
+    accessToken: string,
+    dto: CreateSessionDto,
+    studentIds: number[],
+  ) {
+    try {
+      const sessionResult = await this.supabaseService.insert(
+        accessToken,
+        'sessions',
+        dto,
+      );
+
+      if (!sessionResult || sessionResult.length === 0) {
+        throw new BadRequestException('Failed to create session');
+      }
+
+      const session = sessionResult[0];
+
+      const payload = studentIds.map((studentId) => ({
+        session_id: session.session_id,
+        student_id: studentId,
+        updated_at: new Date().toISOString(),
+      }));
+
+      const studentResult = await this.supabaseService.insert(
+        accessToken,
+        'session_students',
+        payload,
+      );
+
+      if (!studentResult || studentResult.length === 0) {
+        throw new InternalServerErrorException(
+          'Failed to add students to session',
+        );
+      }
+
+      return {
+        session,
+        students_added: studentResult.length,
+      };
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `Failed to create session with students: ${error.message}`,
+      );
+    }
+  }
 }

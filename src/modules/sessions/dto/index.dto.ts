@@ -1,6 +1,6 @@
 import { PartialType } from '@nestjs/mapped-types';
-
-import { IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsArray, IsNotEmpty, IsString, ValidateNested } from 'class-validator';
 
 export class CreateSessionDto {
   @IsString()
@@ -17,6 +17,16 @@ export class CreateSessionDto {
 
   @IsString()
   session_status: string;
+}
+
+export class CreateSessionWithStudentsDto {
+  @ValidateNested()
+  @Type(() => CreateSessionDto)
+  @IsNotEmpty()
+  data: CreateSessionDto;
+
+  @IsArray()
+  studentIds: number[];
 }
 
 export class UpdateSessionDto extends PartialType(CreateSessionDto) {}

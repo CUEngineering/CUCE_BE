@@ -1,13 +1,12 @@
 import {
-  Injectable,
-  NotFoundException,
   BadRequestException,
+  Injectable,
   InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
-import { CreateCourseDto } from '../dto/create-course.dto';
-import { UpdateCourseDto } from '../dto/update-course.dto';
 import { SupabaseService } from '../../../supabase/supabase.service';
-import { CourseType } from '../dto/create-course.dto';
+import { CourseType, CreateCourseDto } from '../dto/create-course.dto';
+import { UpdateCourseDto } from '../dto/update-course.dto';
 import { EnrolledStudent, SupabaseEnrollment } from '../types/course.types';
 
 @Injectable()
@@ -191,7 +190,10 @@ export class CourseService {
           program_id,
           program_name,
           program_type,
-          total_credits
+          total_credits,
+          student:students (
+            student_id,
+            reg_number)
         )
       `,
       )
@@ -207,7 +209,6 @@ export class CourseService {
       throw new NotFoundException(`No programs found for course with ID ${id}`);
     }
 
-    // Extract and format the program data
     return programs.map((pc) => pc.program);
   }
 
@@ -272,11 +273,16 @@ export class CourseService {
           first_name,
           last_name,
           email,
+          profile_picture,
           program:programs (
             program_id,
             program_name,
             program_type
           )
+        ),
+        session:sessions (
+          session_id,
+          session_name
         ),
         enrollment_status,
         special_request,
@@ -309,7 +315,12 @@ export class CourseService {
           first_name: enrollment.student.first_name,
           last_name: enrollment.student.last_name,
           email: enrollment.student.email,
+          profile_picture: enrollment.student.profile_picture,
           program: enrollment.student.program,
+        },
+        session: {
+          session_id: enrollment.session.session_id,
+          session_name: enrollment.session.session_name,
         },
         enrollment: {
           status: enrollment.enrollment_status,

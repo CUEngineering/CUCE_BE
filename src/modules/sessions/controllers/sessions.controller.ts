@@ -14,7 +14,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from 'src/supabase/auth.guard';
-import { CreateSessionDto, UpdateSessionDto } from '../dto/index.dto';
+import {
+  CreateSessionDto,
+  CreateSessionWithStudentsDto,
+  UpdateSessionDto,
+} from '../dto/index.dto';
 import { SessionsService } from '../services/sessions.service';
 
 @Controller('sessions')
@@ -118,6 +122,19 @@ export class SessionController {
       req.accessToken,
       sessionId,
       studentIds,
+    );
+  }
+
+  @Post('with-students')
+  @HttpCode(HttpStatus.CREATED)
+  async createSessionWithStudents(
+    @Body() body: CreateSessionWithStudentsDto,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.sessionService.createSessionWithStudents(
+      req.accessToken,
+      body.data,
+      body.studentIds,
     );
   }
 }

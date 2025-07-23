@@ -28,11 +28,16 @@ export interface SupabaseEnrollment {
     first_name: string | null;
     last_name: string | null;
     email: string;
+    profile_picture: string | null;
     program: {
       program_id: number;
       program_name: string;
       program_type: string;
     };
+  };
+  session: {
+    session_id: number;
+    session_name: string;
   };
   enrollment_status: EnrollmentStatus;
   special_request: boolean;

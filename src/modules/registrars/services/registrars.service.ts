@@ -627,6 +627,8 @@ export class RegistrarsService {
 
     ///store image
 
-    return { url: 'https://mayowafadeni.vercel.app/may.jpg' };
+    return {
+      url: 'https://cuce-fe.vercel.app/_nuxt/CU_Logo_Full.gxABYN_K.svg',
+    };
   }
 }

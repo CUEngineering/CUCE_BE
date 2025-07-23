@@ -12,7 +12,10 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { AuthGuard } from '../../../supabase/auth.guard';
-import { AddCoursesToProgramDto } from '../dto/add-courses-to-program.dto';
+import {
+  AddCoursesToProgramDto,
+  CreateProgramWithCoursesDto,
+} from '../dto/add-courses-to-program.dto';
 import { CreateProgramDto } from '../dto/create-program.dto';
 import { UpdateProgramDto } from '../dto/update-program.dto';
 import { ProgramService } from '../services/program.service';
@@ -98,5 +101,13 @@ export class ProgramController {
     @Req() req: Request & { accessToken: string },
   ) {
     return this.programService.removeCourse(id, courseId, req.accessToken);
+  }
+
+  @Post('with-courses')
+  async createWithCourses(
+    @Body() dto: CreateProgramWithCoursesDto,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.programService.createWithCourses(dto, req.accessToken);
   }
 }

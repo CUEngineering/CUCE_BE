@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Registrar Invitation</title>
+    <title>Student Invitation</title>
     <style>
       body {
         font-family: Arial, sans-serif;
@@ -18,14 +18,15 @@
         max-width: 600px;
         margin: auto;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        position: relative;
+      }
+      .logo {
+        height: 40px;
       }
       .logo-wrapper {
         display: flex;
         justify-content: flex-start;
         margin-bottom: 20px;
-      }
-      .logo {
-        height: 40px;
       }
       .button {
         background-color: #2459a9;
@@ -54,12 +55,13 @@
           class="logo"
         />
       </div>
-      <h2>You’ve Been Invited as a Registrar</h2>
+      <h2>You’ve Been Invited as a Student</h2>
       <p>Hello {{email}},</p>
       <p>
         You have been invited to join our platform as a
-        <strong>Registrar</strong>.
+        <strong>Student</strong>.
       </p>
+      <p><strong>Registration Number:</strong> {{reg_number}}</p>
       <p>Please click the button below to accept your invitation:</p>
       <a href="{{link}}" class="button">Accept Invitation</a>
       <p>
