@@ -62,6 +62,7 @@ export class SessionController {
   ) {
     return this.sessionService.createSession(req.accessToken, createDto);
   }
+
   @Patch(':id')
   @HttpCode(HttpStatus.OK)
   async updateSession(

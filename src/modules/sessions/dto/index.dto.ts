@@ -1,10 +1,21 @@
 import { PartialType } from '@nestjs/mapped-types';
 
+import { IsString } from 'class-validator';
+
 export class CreateSessionDto {
+  @IsString()
   session_name: string;
-  start_date: string; // ISO format
+
+  @IsString()
+  start_date: string;
+
+  @IsString()
   end_date: string;
+
+  @IsString()
   enrollment_deadline: string;
+
+  @IsString()
   session_status: string;
 }
 

@@ -538,8 +538,8 @@ export class SessionsService {
       const result = await this.supabaseService.update(
         accessToken,
         'sessions',
-        dto,
         { session_id: sessionId },
+        dto,
       );
 
       if (!result || result.length === 0) {
