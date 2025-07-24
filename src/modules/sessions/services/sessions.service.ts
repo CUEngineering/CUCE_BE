@@ -426,6 +426,7 @@ export class SessionsService {
   }
   async getCoursesBySession(accessToken: string, sessionId: number) {
     try {
+      // Fetch all session_courses for this session
       const sessionCourses = await this.supabaseService.select(
         accessToken,
         'session_courses',
@@ -446,6 +447,7 @@ export class SessionsService {
         },
       );
 
+      // Fetch all enrollments for this session
       const enrollments = await this.supabaseService.select(
         accessToken,
         'enrollments',
@@ -463,7 +465,41 @@ export class SessionsService {
         {},
       );
 
-      return sessionCourses.map((sc: any) => ({
+      // Fetch all courses (in case some are missing in session_courses)
+      const allCourses = await this.supabaseService.select(
+        accessToken,
+        'courses',
+        {
+          columns: `
+          course_id,
+          course_title,
+          course_code,
+          course_credits,
+          course_type
+        `,
+        },
+      );
+
+      // Create a Set of course_ids that are already in sessionCourses
+      const existingCourseIds = new Set(
+        sessionCourses.map((sc: any) => sc.course_id),
+      );
+
+      // Add missing courses with default CLOSED status
+      const missingCourses = allCourses
+        .filter((course: any) => !existingCourseIds.has(course.course_id))
+        .map((course: any) => ({
+          courseId: course.course_id,
+          status: 'CLOSED',
+          title: course.course_title,
+          code: course.course_code,
+          credits: course.course_credits,
+          type: course.course_type,
+          numberOfStudents: 0,
+        }));
+
+      // Map existing sessionCourses
+      const mappedCourses = sessionCourses.map((sc: any) => ({
         courseId: sc.course_id,
         status: sc.status,
         title: sc.courses?.course_title,
@@ -472,6 +508,9 @@ export class SessionsService {
         type: sc.courses?.course_type,
         numberOfStudents: enrollmentCounts[sc.course_id] || 0,
       }));
+
+      // Combine both
+      return [...mappedCourses, ...missingCourses];
     } catch (error) {
       throw new InternalServerErrorException(
         `Failed to retrieve session courses: ${error.message}`,
