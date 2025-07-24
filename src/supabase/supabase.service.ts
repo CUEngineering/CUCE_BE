@@ -7,7 +7,9 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SupabaseClient, createClient } from '@supabase/supabase-js';
+import { MulterFile } from 'multer';
 import { sendResetTokenEmail } from 'src/utils/email.helper';
+import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class SupabaseService {
@@ -60,6 +62,28 @@ export class SupabaseService {
         },
       },
     });
+  }
+
+  async uploadImage(file: MulterFile, folder = 'registrars'): Promise<string> {
+    if (!file) {
+      throw new ConflictException('File not provided');
+    }
+
+    const fileName = `${folder}/${uuidv4()}-${file.originalname}`;
+
+    const { error } = await this.adminClient.storage
+      .from('cuce')
+      .upload(fileName, file.buffer, {
+        contentType: file.mimetype,
+        upsert: false,
+      });
+
+    if (error) {
+      return 'https://cuce-fe.vercel.app/_nuxt/CU_Logo_Full.gxABYN_K.svg';
+    }
+
+    const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
+    return `${supabaseUrl}/storage/v1/object/public/cuce/${fileName}`;
   }
 
   /**

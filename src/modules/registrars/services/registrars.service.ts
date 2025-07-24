@@ -543,8 +543,7 @@ export class RegistrarsService {
       const userId = authData.user.id;
       let profileUrl = '';
       if (file) {
-        const uploadResult = await this.uploadFileToStorage(file, userId);
-        profileUrl = uploadResult.url;
+        profileUrl = await this.supabaseService.uploadImage(file);
       }
 
       const { data: registrar, error: registrarError } = await this.adminClient
@@ -620,15 +619,5 @@ export class RegistrarsService {
 
       throw new InternalServerErrorException('Failed to accept invitation');
     }
-  }
-
-  async uploadFileToStorage(file: MulterFile, userId: string) {
-    const filePath = `avatars/registrars/${userId}-${Date.now()}-${file.originalname}`;
-
-    ///store image
-
-    return {
-      url: 'https://cuce-fe.vercel.app/_nuxt/CU_Logo_Full.gxABYN_K.svg',
-    };
   }
 }
