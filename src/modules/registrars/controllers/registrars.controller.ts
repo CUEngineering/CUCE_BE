@@ -10,7 +10,9 @@ import {
   Req,
   UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Request } from 'express';
 import type { File as MulterFile } from 'multer';
 import { Public } from 'src/common/public.decorator';
@@ -149,8 +151,10 @@ export class RegistrarsController {
   ) {
     return this.registrarsService.getRegistrarStats(id, req.accessToken);
   }
+
   @Public()
   @Post('accept-invite')
+  @UseInterceptors(FileInterceptor('profile_picture'))
   async acceptInvite(
     @Body() dto: AcceptInviteDto,
     @UploadedFile() file?: MulterFile,

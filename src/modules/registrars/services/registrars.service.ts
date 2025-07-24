@@ -573,6 +573,7 @@ export class RegistrarsService {
         .insert({
           user_id: userId,
           role: 'REGISTRAR',
+          updated_at: new Date(),
         });
       if (roleError) {
         await this.adminClient
@@ -588,7 +589,6 @@ export class RegistrarsService {
         .from('invitations')
         .update({
           status: 'ACCEPTED',
-          accepted_at: new Date().toISOString(),
         })
         .eq('id', invitation.id);
 
