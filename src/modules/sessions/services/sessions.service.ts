@@ -641,7 +641,6 @@ export class SessionsService {
       const result = await this.supabaseService.update(
         accessToken,
         'session_courses',
-
         {
           session_id: sessionId,
           course_id: courseId,
@@ -650,13 +649,41 @@ export class SessionsService {
       );
 
       if (!result || result.length === 0) {
-        throw new NotFoundException('Course not found or update failed');
+        const courseData = await this.supabaseService.select(
+          accessToken,
+          'courses',
+          { filter: { course_id: courseId } },
+        );
+
+        if (!courseData || courseData.length === 0) {
+          throw new NotFoundException('Course not found');
+        }
+
+        const course = courseData[0] as any;
+
+        const insertResult = await this.supabaseService.insert(
+          accessToken,
+          'session_courses',
+          {
+            session_id: sessionId,
+            course_id: courseId,
+            status,
+            adjusted_capacity: course.default_capacity,
+            updated_at: new Date(),
+          },
+        );
+
+        return {
+          message:
+            'Course not found for session, so a new session_course was created',
+          data: insertResult,
+        };
       }
 
       return { message: 'Course status updated successfully' };
     } catch (error) {
       throw new InternalServerErrorException(
-        `Failed to update course status: ${error.message}`,
+        `Failed to update or insert course status: ${error.message}`,
       );
     }
   }
