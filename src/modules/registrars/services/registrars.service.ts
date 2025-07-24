@@ -27,6 +27,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaClient } from '@prisma/client';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { sendEmail } from 'src/utils/email.helper';
+import { encodeEmail } from 'src/utils/emailEncrypt';
 import { AcceptInviteDto } from '../dto/accept-registrar.dto';
 
 function safeUuidv4(): string {
@@ -226,7 +227,8 @@ export class RegistrarsService {
         updated_at: new Date().toISOString(),
       },
     )) as unknown as Invitation[];
-
+    const encodedEmail = encodeURIComponent(encodeEmail(email));
+    const link = `${process.env.APP_BASE_URL}/accept-invite?token=${token}&email=${encodedEmail}`;
     await sendEmail({
       to: email,
       subject: 'You have been invited as a Registrar',
@@ -234,7 +236,7 @@ export class RegistrarsService {
       context: {
         email,
         token,
-        link: `${process.env.APP_BASE_URL}/accept-invite?token=${token}`,
+        link: link,
       },
     });
 
