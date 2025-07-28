@@ -507,6 +507,7 @@ export class EnrollmentsService {
     accessToken: string,
     currentUserId: number,
     currentUserRole: string,
+    filters: Record<string, any> = {},
   ): Promise<
     {
       enrollmentId: number;
@@ -539,7 +540,7 @@ export class EnrollmentsService {
       admins(*), 
       session_course:session_id(*)
     `,
-        filter: {},
+        filter: filters,
       },
     )) as unknown as Enrollment[];
 

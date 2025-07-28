@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   Patch,
+  Query,
   Req,
   UnauthorizedException,
   UseGuards,
@@ -20,7 +21,11 @@ export class EnrollmentController {
   constructor(private readonly enrollmentService: EnrollmentsService) {}
 
   @Get()
-  async findAll(@Req() req: Request & { accessToken: string; user: any }) {
+  async findAll(
+    @Req() req: Request & { accessToken: string; user: any },
+    @Query('registrar_id') registrarId?: string,
+    @Query('student_id') studentId?: string,
+  ) {
     const { role } = req.user;
 
     const roleIdMap = {
@@ -34,11 +39,14 @@ export class EnrollmentController {
     if (!currentUserRoleId) {
       throw new UnauthorizedException('Role ID not found');
     }
-
+    const filters: Record<string, any> = {};
+    if (registrarId) filters['registrar_id'] = Number(registrarId);
+    if (studentId) filters['student_id'] = Number(studentId);
     return this.enrollmentService.getEnrollmentListView(
       req.accessToken,
       currentUserRoleId,
       role,
+      filters,
     );
   }
 
