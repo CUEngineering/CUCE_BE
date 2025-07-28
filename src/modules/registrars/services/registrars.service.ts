@@ -436,6 +436,8 @@ export class RegistrarsService {
       },
       { email, status: 'PENDING' },
     )) as unknown as Invitation[];
+    const encodedEmail = encodeURIComponent(encodeEmail(email));
+    const link = `${process.env.APP_BASE_URL}/accept-invite?token=${token}&email=${encodedEmail}`;
 
     await sendEmail({
       to: email,
@@ -444,7 +446,7 @@ export class RegistrarsService {
       context: {
         email,
         token,
-        link: `${process.env.APP_BASE_URL}/accept-invite?token=${token}`,
+        link: link,
       },
     });
 

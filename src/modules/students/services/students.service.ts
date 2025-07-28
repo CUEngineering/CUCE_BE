@@ -16,6 +16,7 @@ import { SupabaseClient, createClient } from '@supabase/supabase-js';
 import { randomUUID } from 'crypto';
 import { RegistrarsService } from 'src/modules/registrars/services/registrars.service';
 import { sendEmail } from 'src/utils/email.helper';
+import { encodeEmail } from 'src/utils/emailEncrypt';
 import { SupabaseService } from '../../../supabase/supabase.service';
 import {
   AcceptStudentInviteDto,
@@ -330,6 +331,11 @@ export class StudentsService {
           'Failed to create student record',
         );
       }
+      const encodedEmail = encodeURIComponent(encodeEmail(email));
+      const number = encodeURIComponent(encodeEmail(reg_number));
+
+      const link = `${process.env.APP_BASE_URL}/accept-student?token=${token}&email=${encodedEmail}&registration_id=${number}`;
+
       await sendEmail({
         to: email,
         subject: 'You have been invited as a Student',
@@ -338,7 +344,7 @@ export class StudentsService {
           email,
           reg_number,
           token,
-          link: `${process.env.APP_BASE_URL}/accept-student?token=${token}`,
+          link: link,
         },
       });
       return {

@@ -6,7 +6,7 @@
     <title>Student Invitation</title>
     <style>
       body {
-        font-family: Arial, sans-serif;
+        font-family: 'DM Sans', Arial, sans-serif;
         background-color: #f9f9f9;
         padding: 20px;
         color: #333;
@@ -18,20 +18,22 @@
         max-width: 600px;
         margin: auto;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        position: relative;
+        text-align: center;
+      }
+      p {
+        padding: 15px;
+      }
+      .logo-wrapper {
+        text-align: left;
+        margin-bottom: 20px;
       }
       .logo {
         height: 40px;
       }
-      .logo-wrapper {
-        display: flex;
-        justify-content: flex-start;
-        margin-bottom: 20px;
-      }
       .button {
         background-color: #2459a9;
         color: white;
-        padding: 12px 20px;
+        padding: 20px 70px;
         text-align: center;
         border-radius: 5px;
         display: inline-block;
@@ -39,10 +41,49 @@
         text-decoration: none;
         font-size: 16px;
       }
+      .divider {
+        border-top: 1px solid #ddd;
+        margin: 30px 0 10px;
+        padding: 20px;
+      }
       .footer {
-        margin-top: 30px;
         font-size: 12px;
         color: #777;
+      }
+      .footer {
+        padding: 0 32px 32px 32px;
+      }
+
+      .footer-content {
+        text-align: center;
+      }
+
+      .footer-links {
+        display: flex;
+        justify-content: center;
+        gap: 32px;
+        margin-bottom: 24px;
+      }
+
+      .footer-links a {
+        color: #475467;
+        text-decoration: none;
+        font-size: 14px;
+        transition: color 0.2s ease;
+      }
+
+      .footer-links a:hover {
+        color: #344054;
+      }
+
+      .copyright {
+        color: #475467;
+        font-size: 14px;
+        line-height: 1.4;
+      }
+
+      .copyright p {
+        margin: 4px 0;
       }
     </style>
   </head>
@@ -55,24 +96,31 @@
           class="logo"
         />
       </div>
-      <h2>You’ve Been Invited as a Student</h2>
-      <p>Hello {{email}},</p>
+      <h2>Student Invite</h2>
       <p>
-        You have been invited to join our platform as a
-        <strong>Student</strong>.
+        Hi there, You have received an invite to become one of our Students at
+        our esteemed institution. Please click this button or use the link below
+        to create your account now!
       </p>
-      <p><strong>Registration Number:</strong> {{reg_number}}</p>
-      <p>Please click the button below to accept your invitation:</p>
-      <a href="{{link}}" class="button">Accept Invitation</a>
-      <p>
-        If the button above doesn’t work, you can also copy and paste this link
-        into your browser:
-      </p>
+      <a href="{{link}}" class="button">Invite Link</a>
       <p><a href="{{link}}">{{link}}</a></p>
-      <p>This invitation will expire in 7 days.</p>
+
+      <div class="divider"></div>
 
       <div class="footer">
-        <p>© 2025 CUCE. All rights reserved.</p>
+        <div class="footer-content">
+          <div class="footer-links">
+            <a href="https://cuce-fe.vercel.app">Terms</a>
+            <a href="https://cuce-fe.vercel.app">Privacy</a>
+            <a href="https://cuce-fe.vercel.app">Cookies</a>
+            <a href="https://cuce-fe.vercel.app">Contact us</a>
+          </div>
+
+          <div class="copyright">
+            <p>© 2024 Charisma University</p>
+            <p>USA | Turks & Caicos Islands</p>
+          </div>
+        </div>
       </div>
     </div>
   </body>
