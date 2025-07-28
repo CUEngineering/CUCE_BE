@@ -316,7 +316,7 @@ export class SupabaseService {
           const { data: registrar, error: regError } = await this.adminClient
             .from('registrars')
             .select(
-              'first_name, last_name, email, profile_picture, reg_number, program_id, is_deactivated, is_suspended',
+              'first_name, last_name, email, profile_picture, is_deactivated, is_suspended',
             )
             .eq('user_id', userId)
             .single();
