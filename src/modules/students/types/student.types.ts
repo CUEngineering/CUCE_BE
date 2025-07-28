@@ -1,4 +1,4 @@
-import { ProgramType, EnrollmentStatus } from '@prisma/client';
+import { EnrollmentStatus, ProgramType } from '@prisma/client';
 
 export interface Student {
   student_id: number;
@@ -102,4 +102,30 @@ export interface StudentResponse {
   success: boolean;
   message: string;
   student?: Student;
+}
+
+export interface StudentWithRegistrar {
+  student_id: number;
+  reg_number: string;
+  first_name?: string;
+  last_name?: string;
+  email: string;
+  profile_picture?: string;
+  program_id: number;
+  program: {
+    program_name: string;
+    program_type: string;
+    total_credits: number;
+  };
+  enrollments: {
+    enrollment_id: number;
+    registrar_id?: number;
+    registrars?: {
+      registrar_id: number;
+      first_name?: string;
+      last_name?: string;
+      email: string;
+      profile_picture?: string;
+    };
+  }[];
 }

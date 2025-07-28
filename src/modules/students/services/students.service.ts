@@ -27,6 +27,7 @@ import {
   Student,
   StudentResponse,
   StudentStats,
+  StudentWithRegistrar,
 } from '../types/student.types';
 
 function safeUuidv4(): string {
@@ -65,9 +66,8 @@ export class StudentsService {
     });
   }
 
-  async findAll(accessToken: string): Promise<Student[]> {
+  async findAll(accessToken: string): Promise<StudentWithRegistrar[]> {
     try {
-      // First verify the access token is valid
       if (!accessToken) {
         throw new UnauthorizedException('Access token is required');
       }
@@ -77,54 +77,39 @@ export class StudentsService {
         'students',
         {
           columns: `
-            student_id,
-            reg_number,
-            first_name,
-            last_name,
-            email,
-            profile_picture,
-            program_id,
-            program:programs(
-              program_name,
-              program_type,
-              total_credits
-            )
-          `,
+        student_id,
+        reg_number,
+        first_name,
+        last_name,
+        email,
+        profile_picture,
+        program_id,
+        program:programs(program_name, program_type, total_credits),
+        enrollments(
+          enrollment_id,
+          registrar_id,
+          sessions(session_status),
+          registrars(registrar_id, first_name, last_name, email, profile_picture)
+        )
+      `,
+          filter: {
+            'enrollments.sessions.session_status': { eq: 'ACTIVE' },
+            'enrollments.enrollment_status': { eq: 'APPROVED' },
+          },
         },
-      )) as unknown as Student[];
+      )) as unknown as StudentWithRegistrar[];
 
       if (!result) {
         this.logger.warn('No students found in the database');
         return [];
       }
 
-      //   // Get stats for each student
-      //   const studentsWithStats = await Promise.all(
-      //     result.map(async (student) => {
-      //       try {
-      //         const stats = await this.getStudentStats(
-      //           student.student_id,
-      //           accessToken,
-      //         );
-      //         return {
-      //           ...student,
-      //           stats,
-      //         };
-      //       } catch (error) {
-      //         this.logger.error(
-      //           `Error fetching stats for student ${student.student_id}: ${error.message}`,
-      //           error.stack,
-      //         );
-      //         return student; // Return student without stats if stats fetch fails
-      //       }
-      //     }),
-      //   );
-
       return result;
     } catch (error) {
       if (error instanceof UnauthorizedException) {
         throw error;
       }
+
       this.logger.error(
         `Error fetching all students: ${error.message}`,
         error.stack,
