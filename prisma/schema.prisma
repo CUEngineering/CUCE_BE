@@ -169,6 +169,7 @@ model students {
   profile_picture  String?
   program_id       Int
   user_id          String?            @unique @db.Uuid
+  status           String             @default("ACTIVE")
   created_at       DateTime           @default(now())
   updated_at       DateTime
   enrollments      enrollments[]

@@ -732,8 +732,6 @@ export class StudentsService {
         });
 
       if (roleError) {
-        // await this.adminClient.from('students').delete().eq('user_id', userId);
-        // await this.supabase.auth.admin.deleteUser(userId);
         throw new InternalServerErrorException(
           `User role creation failed: ${roleError.message}`,
         );
@@ -779,6 +777,61 @@ export class StudentsService {
       throw new InternalServerErrorException(
         'Failed to accept student invitation',
       );
+    }
+  }
+
+  async rejectStudent(
+    student_id: number,
+    accessToken: string,
+  ): Promise<{ message: string }> {
+    try {
+      const response = await this.supabaseService.update(
+        accessToken,
+        'students',
+        { student_id },
+        { status: 'REJECTED' },
+      );
+
+      if (!response || (Array.isArray(response) && response.length === 0)) {
+        throw new NotFoundException(
+          `Student with ID ${student_id} not found or could not be updated`,
+        );
+      }
+
+      return { message: `Student ${student_id} status updated to REJECTED` };
+    } catch (error) {
+      this.logger.error(
+        `Error rejecting student ${student_id}: ${error.message}`,
+        error.stack,
+      );
+      throw new InternalServerErrorException('Failed to reject student');
+    }
+  }
+
+  async deleteStudent(
+    student_id: number,
+    accessToken: string,
+  ): Promise<{ message: string }> {
+    try {
+      const response = await this.supabaseService.delete(
+        accessToken,
+        'students',
+        { student_id },
+      );
+
+      if (!response || (Array.isArray(response) && response.length === 0)) {
+        throw new NotFoundException(
+          `Student with ID ${student_id} not found or could not be deleted`,
+        );
+      }
+
+      return { message: `Student ${student_id} has been deleted` };
+    } catch (error) {
+      this.logger.error(
+        `Error deleting student ${student_id}: ${error.message}`,
+        error.stack,
+      );
+      throw new InternalServerErrorException('Failed to delete student');
     }
   }
 }

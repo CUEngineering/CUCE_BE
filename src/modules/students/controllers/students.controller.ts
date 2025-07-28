@@ -1,8 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
+  Patch,
   Post,
   Req,
   UploadedFile,
@@ -103,5 +105,21 @@ export class StudentsController {
       session: result.session,
       role: result.role,
     };
+  }
+
+  @Patch(':id/reject')
+  async rejectStudent(
+    @Param('id') id: number,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.studentsService.rejectStudent(id, req.accessToken);
+  }
+
+  @Delete(':id')
+  async deleteStudent(
+    @Param('id') id: number,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.studentsService.deleteStudent(id, req.accessToken);
   }
 }
