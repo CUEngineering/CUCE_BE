@@ -316,7 +316,7 @@ export class SupabaseService {
           const { data: registrar, error: regError } = await this.adminClient
             .from('registrars')
             .select(
-              'first_name, last_name, email, profile_picture, is_deactivated, is_suspended',
+              'registrar_id,first_name, last_name, email, profile_picture, is_deactivated, is_suspended',
             )
             .eq('user_id', userId)
             .single();
@@ -344,7 +344,7 @@ export class SupabaseService {
         case 'ADMIN': {
           const { data: admin, error: adminError } = await this.adminClient
             .from('admins')
-            .select('first_name, last_name, email, profile_picture')
+            .select('admin_id,first_name, last_name, email, profile_picture')
             .eq('user_id', userId)
             .single();
 
@@ -360,7 +360,7 @@ export class SupabaseService {
           const { data: student, error: studentError } = await this.adminClient
             .from('students')
             .select(
-              'first_name, last_name, email, profile_picture, reg_number, program_id',
+              'student_id,first_name, last_name, email, profile_picture, reg_number, program_id',
             )
             .eq('user_id', userId)
             .single();
