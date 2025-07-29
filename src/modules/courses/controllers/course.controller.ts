@@ -1,19 +1,20 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
-  Post,
+  ParseIntPipe,
   Patch,
-  Delete,
-  UseGuards,
+  Post,
   Req,
+  UseGuards,
 } from '@nestjs/common';
-import { CourseService } from '../services/course.service';
+import { Request } from 'express';
+import { AuthGuard } from '../../../supabase/auth.guard';
 import { CreateCourseDto } from '../dto/create-course.dto';
 import { UpdateCourseDto } from '../dto/update-course.dto';
-import { AuthGuard } from '../../../supabase/auth.guard';
-import { Request } from 'express';
+import { CourseService } from '../services/course.service';
 import { EnrolledStudent } from '../types/course.types';
 
 @Controller('courses')
@@ -81,5 +82,13 @@ export class CourseController {
     @Req() req: Request & { accessToken: string },
   ): Promise<EnrolledStudent[]> {
     return this.courseService.getEnrolledStudents(id, req.accessToken);
+  }
+
+  @Get('eligible/:studentId')
+  async getEligibleCourses(
+    @Param('studentId', ParseIntPipe) studentId: number,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.courseService.getEligibleCourses(req.accessToken, studentId);
   }
 }

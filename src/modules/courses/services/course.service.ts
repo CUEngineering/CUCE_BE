@@ -24,7 +24,7 @@ export class CourseService {
       case CourseType.DOCTORATE:
         return 1;
       default:
-        return 4; // Default fallback
+        return 4;
     }
   }
 
@@ -330,5 +330,101 @@ export class CourseService {
         },
       }),
     );
+  }
+
+  async getEligibleCourses(accessToken: string, studentId: number) {
+    const supabase = this.supabaseService.getClientWithAuth(accessToken);
+
+    const { data: studentData, error: studentError } = await supabase
+      .from('students')
+      .select('program_id')
+      .eq('student_id', studentId)
+      .single();
+
+    if (studentError) {
+      throw new Error(`Failed to fetch student: ${studentError.message}`);
+    }
+
+    const studentProgramId = studentData.program_id;
+
+    const { data: sessionData, error: sessionError } = await supabase
+      .from('session_students')
+      .select('session_id, sessions(session_status, session_id)')
+      .eq('student_id', studentId);
+
+    if (sessionError) {
+      throw new Error(`Failed to fetch sessions: ${sessionError.message}`);
+    }
+
+    const activeSession = (sessionData || []).find(
+      (s: any) => s.sessions?.session_status === 'ACTIVE',
+    );
+
+    if (!activeSession) {
+      return [];
+      // No active session for the student
+    }
+
+    const sessionId = activeSession.session_id;
+
+    const { data: eligibleCourses, error: courseError } = await supabase
+      .from('session_courses')
+      .select(
+        `
+      course_id,
+      status,
+      courses (
+        *,
+        enrollments (
+          student_id,
+          enrollment_status
+        ),
+        program_courses (
+          program_id
+        )
+      )
+    `,
+      )
+      .eq('session_id', sessionId);
+
+    if (courseError) {
+      throw new Error(
+        `Failed to fetch eligible courses: ${courseError.message}`,
+      );
+    }
+
+    const filteredCourses = (eligibleCourses || []).filter((item: any) => {
+      const programCourses = item.courses?.program_courses || [];
+      return programCourses.some((pc) => pc.program_id === studentProgramId);
+    });
+
+    const processedCourses = filteredCourses.map((item) => {
+      const course: any = item.courses;
+
+      const uniqueEnrolledStudents = new Set(
+        (course.enrollments || [])
+          .filter((enrollment) =>
+            ['APPROVED', 'ACTIVE', 'COMPLETED'].includes(
+              enrollment.enrollment_status,
+            ),
+          )
+          .map((e) => e.student_id),
+      );
+
+      const uniquePrograms = new Set(
+        (course.program_courses || []).map((pc) => pc.program_id),
+      );
+
+      const { enrollments, program_courses, ...courseData } = course;
+
+      return {
+        ...courseData,
+        total_enrolled_students: uniqueEnrolledStudents.size,
+        total_programs: uniquePrograms.size,
+        availability_status: item.status,
+      };
+    });
+
+    return processedCourses;
   }
 }
