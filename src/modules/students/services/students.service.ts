@@ -334,7 +334,7 @@ export class StudentsService {
       const encodedEmail = encodeURIComponent(encodeEmail(email));
       const number = encodeURIComponent(encodeEmail(reg_number));
 
-      const link = `${process.env.APP_BASE_URL}/accept-student?token=${token}&email=${encodedEmail}&registration_id=${number}`;
+      const link = `${process.env.APP_BASE_URL}/accept-student?token=${token}&email=${encodedEmail}&cuce_unique_stdId=${number}`;
 
       await sendEmail({
         to: email,
@@ -749,7 +749,7 @@ export class StudentsService {
           status: 'ACCEPTED',
           updated_at: new Date().toISOString(),
         })
-        .eq('id', invitation.id);
+        .eq('invitation_id', invitation.invitation_id);
 
       if (updateInvitationError) {
         this.logger.error(

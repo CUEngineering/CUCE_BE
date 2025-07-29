@@ -592,7 +592,7 @@ export class RegistrarsService {
         .update({
           status: 'ACCEPTED',
         })
-        .eq('id', invitation.id);
+        .eq('invitation_id', invitation.invitation_id);
 
       if (updateInvitationError) {
         console.error(
