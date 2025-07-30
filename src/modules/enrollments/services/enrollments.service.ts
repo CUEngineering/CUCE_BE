@@ -664,13 +664,22 @@ export class EnrollmentsService {
     const { student_id, course_id, session_id } = createDto;
 
     // 1. Check for duplicate enrollment with same student_id, course_id, session_id
-    const duplicates = await this.supabaseService.select(
+    const possibleDuplicates = await this.supabaseService.select(
       accessToken,
       'enrollments',
       {
         filter: { student_id, course_id, session_id },
       },
     );
+    const duplicates = possibleDuplicates.filter((enrollment: any) =>
+      ['APPROVED', 'PENDING'].includes(enrollment.enrollment_status),
+    );
+
+    if (duplicates.length > 0) {
+      throw new BadRequestException(
+        `Enrollment already exists for student_id ${student_id}, course_id ${course_id}, session_id ${session_id}`,
+      );
+    }
 
     if (duplicates && duplicates.length > 0) {
       throw new BadRequestException(
