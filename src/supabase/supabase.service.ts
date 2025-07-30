@@ -360,7 +360,21 @@ export class SupabaseService {
           const { data: student, error: studentError } = await this.adminClient
             .from('students')
             .select(
-              'student_id,first_name, last_name, email, profile_picture, reg_number, program_id',
+              `
+      student_id,
+      first_name,
+      last_name,
+      email,
+      profile_picture,
+      reg_number,
+      program_id,
+      program:programs (
+        program_id,
+        program_name,
+        program_type,
+        total_credits
+      )
+      `,
             )
             .eq('user_id', userId)
             .single();

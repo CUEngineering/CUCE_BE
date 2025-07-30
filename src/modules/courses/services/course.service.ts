@@ -422,6 +422,7 @@ export class CourseService {
         total_enrolled_students: uniqueEnrolledStudents.size,
         total_programs: uniquePrograms.size,
         availability_status: item.status,
+        session_id: sessionId,
       };
     });
 

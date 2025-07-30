@@ -8,7 +8,10 @@ import {
 } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { SupabaseService } from '../../../supabase/supabase.service';
-import { UpdateEnrollmentDto } from '../dto/update-enrollment.dto';
+import {
+  CreateEnrollmentDto,
+  UpdateEnrollmentDto,
+} from '../dto/update-enrollment.dto';
 import { Enrollment } from '../types/enrollment.types';
 
 @Injectable()
@@ -515,13 +518,18 @@ export class EnrollmentsService {
       studentId: string;
       studentImage: string;
       courseCode: string;
+      courseName: string;
       courseStatus: string;
+      courseCredit: string;
+      courseDescription: string;
       program: string;
       status: 'approved' | 'pending' | 'rejected';
       assignedRegistrar?: string;
       assignedRegistrarImage?: string;
       assignedStatus: 'unassigned' | 'toOthers' | 'toMe';
       sessionName: string;
+      sessionId: string;
+      CourseId: string;
       reason: string;
       createdAt?: Date;
       updatedAt?: Date;
@@ -578,6 +586,11 @@ export class EnrollmentsService {
         studentId: e.students?.reg_number ?? '',
         studentImage: e.students?.profile_picture ?? '',
         courseCode: e.courses?.course_code ?? '',
+        courseCredit: e.courses?.course_credits ?? '',
+        courseName: e.courses?.course_title ?? '',
+        courseDescription: e.courses?.course_desc ?? '',
+        sessionId: e.session_course.session_id ?? '',
+        CourseId: e.courses?.course_id ?? '',
         courseStatus: e.session_course?.session_status ?? 'closed',
         program: e.students?.programs?.program_name ?? '',
         status,
@@ -642,5 +655,64 @@ export class EnrollmentsService {
 
       throw new InternalServerErrorException('Failed to update enrollment');
     }
+  }
+
+  async create(
+    createDto: CreateEnrollmentDto,
+    accessToken: string,
+  ): Promise<{ success: boolean; message: string; enrollment: any }> {
+    const { student_id, course_id, session_id } = createDto;
+
+    // 1. Check for duplicate enrollment with same student_id, course_id, session_id
+    const duplicates = await this.supabaseService.select(
+      accessToken,
+      'enrollments',
+      {
+        filter: { student_id, course_id, session_id },
+      },
+    );
+
+    if (duplicates && duplicates.length > 0) {
+      throw new BadRequestException(
+        `Enrollment already exists for student_id ${student_id}, course_id ${course_id}, session_id ${session_id}`,
+      );
+    }
+
+    const existingEnrollment: any[] = await this.supabaseService.select(
+      accessToken,
+      'enrollments',
+      {
+        filter: { student_id, session_id },
+      },
+    );
+
+    let registrar_id = null;
+    let admin_id = null;
+
+    if (existingEnrollment && existingEnrollment.length > 0) {
+      registrar_id = existingEnrollment[0].registrar_id || null;
+      admin_id = existingEnrollment[0].admin_id || null;
+    }
+
+    const enrollmentData = {
+      ...createDto,
+      ...(registrar_id !== null && { registrar_id }),
+      ...(admin_id !== null && { admin_id }),
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+
+    // 4. Insert new enrollment
+    const inserted = await this.supabaseService.insert(
+      accessToken,
+      'enrollments',
+      enrollmentData,
+    );
+
+    return {
+      success: true,
+      message: 'Enrollment created successfully',
+      enrollment: inserted[0],
+    };
   }
 }

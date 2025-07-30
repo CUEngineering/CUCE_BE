@@ -27,11 +27,16 @@ export interface Enrollment {
   session_course: {
     session_status: string;
     session_name: string;
+    session_id: string;
   };
   courses?: {
     course_code: string;
+    course_credits: string;
     course_status: 'open' | 'closed';
     program: string;
+    course_title: string;
+    course_desc: string;
+    course_id: string;
   };
   registrars?: {
     first_name: string;

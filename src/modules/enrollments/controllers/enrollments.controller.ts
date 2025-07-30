@@ -6,13 +6,17 @@ import {
   HttpStatus,
   Param,
   Patch,
+  Post,
   Query,
   Req,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from 'src/supabase/auth.guard';
-import { UpdateEnrollmentDto } from '../dto/update-enrollment.dto';
+import {
+  CreateEnrollmentDto,
+  UpdateEnrollmentDto,
+} from '../dto/update-enrollment.dto';
 import { EnrollmentsService } from '../services/enrollments.service';
 
 @Controller('enrollments')
@@ -58,5 +62,14 @@ export class EnrollmentController {
     @Req() req: Request & { accessToken: string },
   ) {
     return this.enrollmentService.update(id, updateDto, req.accessToken);
+  }
+
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  async createEnrollment(
+    @Body() createDto: CreateEnrollmentDto,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.enrollmentService.create(createDto, req.accessToken);
   }
 }

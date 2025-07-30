@@ -29,3 +29,24 @@ export class UpdateEnrollmentDto {
   @IsInt()
   admin_id?: number;
 }
+
+export class CreateEnrollmentDto {
+  @IsEnum(EnrollmentStatus)
+  enrollment_status: EnrollmentStatus;
+
+  @IsOptional()
+  @IsBoolean()
+  special_request?: boolean;
+
+  @IsOptional()
+  rejection_reason?: string;
+
+  @IsInt()
+  student_id: number;
+
+  @IsInt()
+  course_id: number;
+
+  @IsInt()
+  session_id: number;
+}
