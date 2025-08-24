@@ -538,8 +538,6 @@ export class EnrollmentsService {
     accessToken: string,
   ): Promise<{ success: boolean; message: string; enrollment: any }> {
     try {
-      const supabase = this.supabaseService.getClientWithAuth(accessToken);
-
       const enrollmentsList = await this.sharedSessionService.prismaClient.$queryRaw<
         [
           Pick<Enrollment, 'student_id' | 'session_id' | 'registrar_id' | 'course_id'> & {
@@ -553,7 +551,7 @@ export class EnrollmentsService {
             >;
             student: Pick<
               students,
-              'student_id' | 'reg_number' | 'first_name' | 'last_name' | 'email' | 'profile_picture' | 'status'
+              'student_id' | 'reg_number' | 'first_name' | 'last_name' | 'email' | 'profile_picture'
             >;
             registrar: Pick<
               registrars,
@@ -607,9 +605,7 @@ export class EnrollmentsService {
             'email',
             st.email,
             'profile_picture',
-            st.profile_picture,
-            'status',
-            st.status
+            st.profile_picture
           ) as "student",
           jsonb_build_object(
             'registrar_id',
