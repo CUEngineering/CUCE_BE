@@ -1,11 +1,8 @@
+import { CourseType } from '@prisma/client';
+
 export interface Enrollment {
   enrollment_id: number;
-  enrollment_status:
-    | 'ACTIVE'
-    | 'COMPLETED'
-    | 'APPROVED'
-    | 'REJECTED'
-    | 'CANCELLED';
+  enrollment_status: 'ACTIVE' | 'COMPLETED' | 'APPROVED' | 'REJECTED' | 'CANCELLED' | 'PENDING';
   student_id: number;
   registrar_id?: number | null;
   rejection_reason: string;
@@ -33,6 +30,7 @@ export interface Enrollment {
     course_code: string;
     course_credits: string;
     course_status: 'open' | 'closed';
+    course_type: CourseType;
     program: string;
     course_title: string;
     course_desc: string;

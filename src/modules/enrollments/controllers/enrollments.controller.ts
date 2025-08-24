@@ -13,10 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from 'src/supabase/auth.guard';
-import {
-  CreateEnrollmentDto,
-  UpdateEnrollmentDto,
-} from '../dto/update-enrollment.dto';
+import { CreateEnrollmentDto, UpdateEnrollmentDto } from '../dto/update-enrollment.dto';
 import { EnrollmentsService } from '../services/enrollments.service';
 
 @Controller('enrollments')
@@ -29,6 +26,7 @@ export class EnrollmentController {
     @Req() req: Request & { accessToken: string; user: any },
     @Query('registrar_id') registrarId?: string,
     @Query('student_id') studentId?: string,
+    @Query('session_id') session_id?: string,
   ) {
     const { role } = req.user;
 
@@ -43,15 +41,29 @@ export class EnrollmentController {
     if (!currentUserRoleId) {
       throw new UnauthorizedException('Role ID not found');
     }
-    const filters: Record<string, any> = {};
-    if (registrarId) filters['registrar_id'] = Number(registrarId);
-    if (studentId) filters['student_id'] = Number(studentId);
-    return this.enrollmentService.getEnrollmentListView(
-      req.accessToken,
-      currentUserRoleId,
-      role,
-      filters,
-    );
+
+    const filters: Record<string, any> = {
+      session_id,
+    };
+
+    if (registrarId) filters.registrar_id = Number(registrarId);
+    if (studentId) filters.student_id = Number(studentId);
+
+    if (role) {
+      switch (role.toLowerCase()) {
+        case 'student': {
+          filters.student_id = Number(currentUserRoleId);
+          break;
+        }
+
+        case 'registrar': {
+          filters.registrar_id = Number(currentUserRoleId);
+          break;
+        }
+      }
+    }
+
+    return this.enrollmentService.getEnrollmentListView(req.accessToken, currentUserRoleId, role, filters);
   }
 
   @Patch('/:id')
@@ -66,10 +78,7 @@ export class EnrollmentController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async createEnrollment(
-    @Body() createDto: CreateEnrollmentDto,
-    @Req() req: Request & { accessToken: string },
-  ) {
+  async createEnrollment(@Body() createDto: CreateEnrollmentDto, @Req() req: Request & { accessToken: string }) {
     return this.enrollmentService.create(createDto, req.accessToken);
   }
 }

@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Enrollment Accepted</title>
+    <style>
+      body {
+        font-family: 'DM Sans', Arial, sans-serif;
+        background-color: #f9f9f9;
+        padding: 20px;
+        color: #333;
+      }
+      .container {
+        background-color: #ffffff;
+        padding: 30px;
+        border-radius: 8px;
+        max-width: 600px;
+        margin: auto;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        text-align: center;
+      }
+      p {
+        padding: 15px;
+      }
+      .logo-wrapper {
+        text-align: left;
+        margin-bottom: 20px;
+      }
+      .logo {
+        height: 40px;
+      }
+      .button {
+        background-color: #2459a9;
+        color: white;
+        padding: 20px 70px;
+        text-align: center;
+        border-radius: 5px;
+        display: inline-block;
+        margin-top: 20px;
+        text-decoration: none;
+        font-size: 16px;
+      }
+      .divider {
+        border-top: 1px solid #ddd;
+        margin: 30px 0 10px;
+        padding: 20px;
+      }
+      .footer {
+        font-size: 12px;
+        color: #777;
+      }
+      .footer {
+        padding: 0 32px 32px 32px;
+      }
+
+      .footer-content {
+        text-align: center;
+      }
+
+      .footer-links {
+        display: flex;
+        justify-content: center;
+        gap: 32px;
+        margin-bottom: 24px;
+      }
+
+      .footer-links a {
+        color: #475467;
+        text-decoration: none;
+        font-size: 14px;
+        transition: color 0.2s ease;
+      }
+
+      .footer-links a:hover {
+        color: #344054;
+      }
+
+      .copyright {
+        color: #475467;
+        font-size: 14px;
+        line-height: 1.4;
+      }
+
+      .copyright p {
+        margin: 4px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="logo-wrapper">
+        <img
+          src="https://cuce-fe.vercel.app/_nuxt/CU_Logo_Full.gxABYN_K.svg"
+          alt="CUCE Logo"
+          class="logo"
+        />
+      </div>
+      <h2>Enrollment Accepted</h2>
+      <p>
+        Hi there, Your enrollment for the course {{courseName}} in {{session}} has been accepted. Do well to ensure you enroll for other courses offered in this session for your program.
+      </p>
+      <!--
+      <a href="{{link}}" class="button">Invite Link</a>
+      <p><a href="{{link}}">{{link}}</a></p>
+      -->
+
+      <div class="divider"></div>
+
+      <div class="footer">
+        <div class="footer-content">
+          <div class="footer-links">
+            <a href="https://cuce-fe.vercel.app">Terms</a>
+            <a href="https://cuce-fe.vercel.app">Privacy</a>
+            <a href="https://cuce-fe.vercel.app">Cookies</a>
+            <a href="https://cuce-fe.vercel.app">Contact us</a>
+          </div>
+
+          <div class="copyright">
+            <p>© 2024 Charisma University</p>
+            <p>USA | Turks & Caicos Islands</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

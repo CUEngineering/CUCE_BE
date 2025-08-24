@@ -1,4 +1,5 @@
 export interface SessionCourse {
+  course_id: number;
   session_id: number;
   status: string;
 }

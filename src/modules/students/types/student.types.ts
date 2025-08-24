@@ -1,4 +1,4 @@
-import { EnrollmentStatus, ProgramType } from '@prisma/client';
+import type { EnrollmentStatus, ProgramType } from '@prisma/client';
 
 export interface Student {
   student_id: number;

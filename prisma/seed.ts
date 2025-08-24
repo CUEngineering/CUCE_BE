@@ -1,5 +1,5 @@
+import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
-import { randomUUID } from 'crypto';
 
 // Create Prisma Client instance with explicit typing
 const prisma = new PrismaClient();
@@ -46,8 +46,7 @@ async function main() {
       course_credits: 4,
       course_type: 'UNDERGRADUATE',
       default_capacity: 40,
-      course_desc:
-        'Learn about database design, SQL, and database management systems.',
+      course_desc: 'Learn about database design, SQL, and database management systems.',
     },
   });
 
@@ -58,8 +57,7 @@ async function main() {
       course_credits: 4,
       course_type: 'GRADUATE',
       default_capacity: 30,
-      course_desc:
-        'Advanced topics in artificial intelligence and machine learning.',
+      course_desc: 'Advanced topics in artificial intelligence and machine learning.',
     },
   });
 
