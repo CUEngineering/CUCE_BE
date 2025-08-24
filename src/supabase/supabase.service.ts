@@ -1,3 +1,4 @@
+import type { MulterFile } from 'multer';
 import {
   ConflictException,
   Inject,
@@ -6,8 +7,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { SupabaseClient, createClient } from '@supabase/supabase-js';
-import { MulterFile } from 'multer';
+// eslint-disable-next-line ts/consistent-type-imports
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { sendResetTokenEmail } from 'src/utils/email.helper';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -18,13 +19,12 @@ export class SupabaseService {
   constructor(
     @Inject('SUPABASE_CLIENT')
     private readonly supabase: SupabaseClient,
+    @Inject(ConfigService)
     private readonly configService: ConfigService,
   ) {
     // Initialize admin client with service role key
     const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
-    const supabaseServiceKey = this.configService.get<string>(
-      'SUPABASE_SERVICE_ROLE_KEY',
-    );
+    const supabaseServiceKey = this.configService.get<string>('SUPABASE_SERVICE_ROLE_KEY');
 
     if (!supabaseUrl || !supabaseServiceKey) {
       throw new Error('Supabase URL and Service Role Key must be provided');
@@ -71,12 +71,10 @@ export class SupabaseService {
 
     const fileName = `${folder}/${uuidv4()}-${file.originalname}`;
 
-    const { error } = await this.adminClient.storage
-      .from('cuce')
-      .upload(fileName, file.buffer, {
-        contentType: file.mimetype,
-        upsert: false,
-      });
+    const { error } = await this.adminClient.storage.from('cuce').upload(fileName, file.buffer, {
+      contentType: file.mimetype,
+      upsert: false,
+    });
 
     if (error) {
       return 'https://cuce-fe.vercel.app/_nuxt/CU_Logo_Full.gxABYN_K.svg';
@@ -148,10 +146,7 @@ export class SupabaseService {
     }
 
     if (query.offset) {
-      queryBuilder = queryBuilder.range(
-        query.offset,
-        query.offset + (query.limit || 10) - 1,
-      );
+      queryBuilder = queryBuilder.range(query.offset, query.offset + (query.limit || 10) - 1);
     }
 
     if (query.orderBy) {
@@ -174,10 +169,7 @@ export class SupabaseService {
    */
   async insert(accessToken: string, table: string, data: Record<string, any>) {
     const client = this.getClientWithAuth(accessToken);
-    const { data: result, error } = await client
-      .from(table)
-      .insert(data)
-      .select();
+    const { data: result, error } = await client.from(table).insert(data).select();
 
     if (error) {
       throw new InternalServerErrorException(error.message);
@@ -189,18 +181,9 @@ export class SupabaseService {
   /**
    * Update data in a table with RLS enforcement
    */
-  async update(
-    accessToken: string,
-    table: string,
-    filter: Record<string, any>,
-    data: Record<string, any>,
-  ) {
+  async update(accessToken: string, table: string, filter: Record<string, any>, data: Record<string, any>) {
     const client = this.getClientWithAuth(accessToken);
-    const { data: result, error } = await client
-      .from(table)
-      .update(data)
-      .match(filter)
-      .select();
+    const { data: result, error } = await client.from(table).update(data).match(filter).select();
 
     if (error) {
       throw new InternalServerErrorException(error.message);
@@ -212,17 +195,9 @@ export class SupabaseService {
   /**
    * Delete data from a table with RLS enforcement
    */
-  async delete(
-    accessToken: string,
-    table: string,
-    filter: Record<string, any>,
-  ) {
+  async delete(accessToken: string, table: string, filter: Record<string, any>) {
     const client = this.getClientWithAuth(accessToken);
-    const { data: result, error } = await client
-      .from(table)
-      .delete()
-      .match(filter)
-      .select();
+    const { data: result, error } = await client.from(table).delete().match(filter).select();
 
     if (error) {
       throw new InternalServerErrorException(error.message);
@@ -231,11 +206,7 @@ export class SupabaseService {
     return result;
   }
 
-  async signUp(
-    email: string,
-    password: string,
-    options?: { email_confirm?: boolean },
-  ) {
+  async signUp(email: string, password: string, options?: { email_confirm?: boolean }) {
     try {
       const { data, error } = await this.supabase.auth.signUp({
         email,
@@ -266,10 +237,7 @@ export class SupabaseService {
       };
     } catch (error) {
       // Rethrow known exceptions
-      if (
-        error instanceof ConflictException ||
-        error instanceof InternalServerErrorException
-      ) {
+      if (error instanceof ConflictException || error instanceof InternalServerErrorException) {
         throw error;
       }
 
@@ -315,9 +283,7 @@ export class SupabaseService {
         case 'REGISTRAR': {
           const { data: registrar, error: regError } = await this.adminClient
             .from('registrars')
-            .select(
-              'registrar_id,first_name, last_name, email, profile_picture, is_deactivated, is_suspended',
-            )
+            .select('registrar_id,first_name, last_name, email, profile_picture, is_deactivated, is_suspended')
             .eq('user_id', userId)
             .single();
 
@@ -326,15 +292,11 @@ export class SupabaseService {
           }
 
           if (registrar.is_deactivated) {
-            throw new UnauthorizedException(
-              'Your account has been deactivated. Please contact support.',
-            );
+            throw new UnauthorizedException('Your account has been deactivated. Please contact support.');
           }
 
           if (registrar.is_suspended) {
-            throw new UnauthorizedException(
-              'Your account is currently suspended. Please contact support.',
-            );
+            throw new UnauthorizedException('Your account is currently suspended. Please contact support.');
           }
 
           profileData = registrar;
@@ -397,10 +359,7 @@ export class SupabaseService {
         role,
       };
     } catch (error) {
-      if (
-        error instanceof UnauthorizedException ||
-        error instanceof InternalServerErrorException
-      ) {
+      if (error instanceof UnauthorizedException || error instanceof InternalServerErrorException) {
         throw error;
       }
 
@@ -444,9 +403,7 @@ export class SupabaseService {
       const { error } = await this.adminClient.auth.admin.deleteUser(userId);
 
       if (error) {
-        throw new InternalServerErrorException(
-          `Failed to delete user: ${error.message}`,
-        );
+        throw new InternalServerErrorException(`Failed to delete user: ${error.message}`);
       }
 
       return true;
@@ -457,20 +414,16 @@ export class SupabaseService {
       throw new InternalServerErrorException('Failed to delete user');
     }
   }
+
   /**
    * Insert a record using admin privileges (bypassing RLS)
    */
   async adminInsert(table: string, data: Record<string, any>) {
     try {
-      const { data: result, error } = await this.adminClient
-        .from(table)
-        .insert(data)
-        .select();
+      const { data: result, error } = await this.adminClient.from(table).insert(data).select();
 
       if (error) {
-        throw new InternalServerErrorException(
-          `Admin insert failed: ${error.message}`,
-        );
+        throw new InternalServerErrorException(`Admin insert failed: ${error.message}`);
       }
 
       return { data: result, error: null };
@@ -481,27 +434,21 @@ export class SupabaseService {
       return {
         data: null,
         error: {
-          message:
-            error instanceof Error ? error.message : 'Admin insert failed',
+          message: error instanceof Error ? error.message : 'Admin insert failed',
         },
       };
     }
   }
+
   /**
    * Insert a single record and return it using admin privileges (bypassing RLS)
    */
   async adminInsertSingle(table: string, data: Record<string, any>) {
     try {
-      const { data: result, error } = await this.adminClient
-        .from(table)
-        .insert(data)
-        .select()
-        .single();
+      const { data: result, error } = await this.adminClient.from(table).insert(data).select().single();
 
       if (error) {
-        throw new InternalServerErrorException(
-          `Admin insert failed: ${error.message}`,
-        );
+        throw new InternalServerErrorException(`Admin insert failed: ${error.message}`);
       }
 
       return { data: result, error: null };
@@ -512,24 +459,20 @@ export class SupabaseService {
       return {
         data: null,
         error: {
-          message:
-            error instanceof Error ? error.message : 'Admin insert failed',
+          message: error instanceof Error ? error.message : 'Admin insert failed',
         },
       };
     }
   }
 
   async forgotPassword(email: string) {
-    const { data: usersData, error: listError } =
-      await this.adminClient.auth.admin.listUsers();
+    const { data: usersData, error: listError } = await this.adminClient.auth.admin.listUsers();
 
     if (listError) {
       throw new InternalServerErrorException('Failed to fetch user list');
     }
 
-    const user = usersData.users.find(
-      (u) => u.email?.toLowerCase() === email.toLowerCase(),
-    );
+    const user = usersData.users.find((u) => u.email?.toLowerCase() === email.toLowerCase());
 
     if (!user) {
       throw new UnauthorizedException('No user found with that email');
@@ -539,13 +482,11 @@ export class SupabaseService {
 
     const token = Math.floor(100000 + Math.random() * 900000).toString();
 
-    const { error: insertError } = await this.adminClient
-      .from('password_resets')
-      .insert({
-        email,
-        token,
-        createdAt: new Date().toISOString(),
-      });
+    const { error: insertError } = await this.adminClient.from('password_resets').insert({
+      email,
+      token,
+      createdAt: new Date().toISOString(),
+    });
 
     if (insertError) {
       throw new InternalServerErrorException('Could not generate reset token');
@@ -578,23 +519,19 @@ export class SupabaseService {
     //   throw new UnauthorizedException('Token expired');
     // }
 
-    const { data: users, error: listError } =
-      await this.adminClient.auth.admin.listUsers();
+    const { data: users, error: listError } = await this.adminClient.auth.admin.listUsers();
     if (listError) {
       throw new InternalServerErrorException('Failed to fetch users');
     }
 
-    const user = users.users.find(
-      (u) => u.email?.toLowerCase() === email.toLowerCase(),
-    );
+    const user = users.users.find((u) => u.email?.toLowerCase() === email.toLowerCase());
     if (!user) {
       throw new InternalServerErrorException('User not found');
     }
 
-    const { error: updateError } =
-      await this.adminClient.auth.admin.updateUserById(user.id, {
-        password: newPassword,
-      });
+    const { error: updateError } = await this.adminClient.auth.admin.updateUserById(user.id, {
+      password: newPassword,
+    });
 
     if (updateError) {
       throw new InternalServerErrorException(updateError.message);

@@ -1,9 +1,9 @@
-import {
-  BadRequestException,
-  Injectable,
-  InternalServerErrorException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { omit } from 'lodash';
+import { Enrollment } from 'src/modules/enrollments/types/enrollment.types';
+import { ProgramCourse } from 'src/modules/programs/types/program.types';
+import { SessionCourse } from 'src/modules/sessions/types';
+import { SharedSessionService } from 'src/modules/shared/services/session.service';
 import { SupabaseService } from '../../../supabase/supabase.service';
 import { CourseType, CreateCourseDto } from '../dto/create-course.dto';
 import { UpdateCourseDto } from '../dto/update-course.dto';
@@ -11,7 +11,10 @@ import { EnrolledStudent, SupabaseEnrollment } from '../types/course.types';
 
 @Injectable()
 export class CourseService {
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly sharedSessionService: SharedSessionService,
+  ) {}
 
   private getDefaultCapacity(courseType: CourseType): number {
     switch (courseType) {
@@ -29,9 +32,7 @@ export class CourseService {
   }
 
   async create(createCourseDto: CreateCourseDto, accessToken: string) {
-    const defaultCapacity = this.getDefaultCapacity(
-      createCourseDto.course_type,
-    );
+    const defaultCapacity = this.getDefaultCapacity(createCourseDto.course_type);
 
     const courseData = {
       course_title: createCourseDto.course_title,
@@ -45,9 +46,7 @@ export class CourseService {
 
   async findAll(accessToken: string) {
     // Get all courses with their enrollments and program associations
-    const { data: courses, error } = await this.supabaseService
-      .getClientWithAuth(accessToken)
-      .from('courses').select(`
+    const { data: courses, error } = await this.supabaseService.getClientWithAuth(accessToken).from('courses').select(`
         *,
         enrollments (
           student_id,
@@ -67,24 +66,14 @@ export class CourseService {
       // Get unique student IDs from approved, active, or completed enrollments
       const uniqueEnrolledStudents = new Set(
         (course.enrollments || [])
-          .filter((enrollment) =>
-            ['APPROVED', 'ACTIVE', 'COMPLETED'].includes(
-              enrollment.enrollment_status,
-            ),
-          )
+          .filter((enrollment) => ['APPROVED', 'ACTIVE', 'COMPLETED'].includes(enrollment.enrollment_status))
           .map((enrollment) => enrollment.student_id),
       );
 
       // Get unique program IDs
-      const uniquePrograms = new Set(
-        (course.program_courses || []).map((pc) => pc.program_id),
-      );
-
-      // Remove the raw arrays from the response
-      const { enrollments, program_courses, ...courseData } = course;
-
+      const uniquePrograms = new Set((course.program_courses || []).map((pc) => pc.program_id));
       return {
-        ...courseData,
+        ...omit(course, ['enrollments', 'program_courses']),
         total_enrolled_students: uniqueEnrolledStudents.size,
         total_programs: uniquePrograms.size,
       };
@@ -105,11 +94,7 @@ export class CourseService {
     return result[0];
   }
 
-  async update(
-    id: string,
-    updateCourseDto: UpdateCourseDto,
-    accessToken: string,
-  ) {
+  async update(id: string, updateCourseDto: UpdateCourseDto, accessToken: string) {
     // First check if course exists
     await this.findOne(id, accessToken);
 
@@ -119,17 +104,10 @@ export class CourseService {
 
     // If course_type is being updated, recalculate default_capacity
     if (updateCourseDto.course_type) {
-      updateData.default_capacity = this.getDefaultCapacity(
-        updateCourseDto.course_type,
-      );
+      updateData.default_capacity = this.getDefaultCapacity(updateCourseDto.course_type);
     }
 
-    return this.supabaseService.update(
-      accessToken,
-      'courses',
-      { course_id: id },
-      updateData,
-    );
+    return this.supabaseService.update(accessToken, 'courses', { course_id: id }, updateData);
   }
 
   async delete(id: string, accessToken: string) {
@@ -137,24 +115,19 @@ export class CourseService {
     await this.findOne(id, accessToken);
 
     // Check if course has any enrollments
-    const { data: enrollments, error: enrollmentError } =
-      await this.supabaseService
-        .getClientWithAuth(accessToken)
-        .from('enrollments')
-        .select('enrollment_id')
-        .eq('course_id', id)
-        .limit(1);
+    const { data: enrollments, error: enrollmentError } = await this.supabaseService
+      .getClientWithAuth(accessToken)
+      .from('enrollments')
+      .select('enrollment_id')
+      .eq('course_id', id)
+      .limit(1);
 
     if (enrollmentError) {
-      throw new InternalServerErrorException(
-        `Failed to check course enrollments: ${enrollmentError.message}`,
-      );
+      throw new InternalServerErrorException(`Failed to check course enrollments: ${enrollmentError.message}`);
     }
 
     if (enrollments && enrollments.length > 0) {
-      throw new BadRequestException(
-        'Cannot delete course with existing enrollments',
-      );
+      throw new BadRequestException('Cannot delete course with existing enrollments');
     }
 
     // If no enrollments exist, proceed with deletion
@@ -165,9 +138,7 @@ export class CourseService {
       .eq('course_id', id);
 
     if (deleteError) {
-      throw new InternalServerErrorException(
-        `Failed to delete course: ${deleteError.message}`,
-      );
+      throw new InternalServerErrorException(`Failed to delete course: ${deleteError.message}`);
     }
 
     return {
@@ -200,9 +171,7 @@ export class CourseService {
       .eq('course_id', id);
 
     if (error) {
-      throw new InternalServerErrorException(
-        `Failed to fetch affiliated programs: ${error.message}`,
-      );
+      throw new InternalServerErrorException(`Failed to fetch affiliated programs: ${error.message}`);
     }
 
     if (!programs || programs.length === 0) {
@@ -237,9 +206,7 @@ export class CourseService {
       .eq('course_id', id);
 
     if (error) {
-      throw new InternalServerErrorException(
-        `Failed to fetch affiliated sessions: ${error.message}`,
-      );
+      throw new InternalServerErrorException(`Failed to fetch affiliated sessions: ${error.message}`);
     }
 
     if (!sessions || sessions.length === 0) {
@@ -254,10 +221,7 @@ export class CourseService {
     }));
   }
 
-  async getEnrolledStudents(
-    id: string,
-    accessToken: string,
-  ): Promise<EnrolledStudent[]> {
+  async getEnrolledStudents(id: string, accessToken: string): Promise<EnrolledStudent[]> {
     // First check if course exists
     await this.findOne(id, accessToken);
 
@@ -295,41 +259,35 @@ export class CourseService {
       .order('created_at', { ascending: false });
 
     if (error) {
-      throw new InternalServerErrorException(
-        `Failed to fetch enrolled students: ${error.message}`,
-      );
+      throw new InternalServerErrorException(`Failed to fetch enrolled students: ${error.message}`);
     }
 
     if (!enrollments || enrollments.length === 0) {
-      throw new NotFoundException(
-        `No enrolled students found for course with ID ${id}`,
-      );
+      throw new NotFoundException(`No enrolled students found for course with ID ${id}`);
     }
 
     // Format the response to include both student and enrollment information
-    return (enrollments as unknown as SupabaseEnrollment[]).map(
-      (enrollment) => ({
-        student: {
-          id: enrollment.student.student_id,
-          reg_number: enrollment.student.reg_number,
-          first_name: enrollment.student.first_name,
-          last_name: enrollment.student.last_name,
-          email: enrollment.student.email,
-          profile_picture: enrollment.student.profile_picture,
-          program: enrollment.student.program,
-        },
-        session: {
-          session_id: enrollment.session.session_id,
-          session_name: enrollment.session.session_name,
-        },
-        enrollment: {
-          status: enrollment.enrollment_status,
-          special_request: enrollment.special_request,
-          rejection_reason: enrollment.rejection_reason,
-          enrolled_at: enrollment.created_at,
-        },
-      }),
-    );
+    return (enrollments as unknown as SupabaseEnrollment[]).map((enrollment) => ({
+      student: {
+        id: enrollment.student.student_id,
+        reg_number: enrollment.student.reg_number,
+        first_name: enrollment.student.first_name,
+        last_name: enrollment.student.last_name,
+        email: enrollment.student.email,
+        profile_picture: enrollment.student.profile_picture,
+        program: enrollment.student.program,
+      },
+      session: {
+        session_id: enrollment.session.session_id,
+        session_name: enrollment.session.session_name,
+      },
+      enrollment: {
+        status: enrollment.enrollment_status,
+        special_request: enrollment.special_request,
+        rejection_reason: enrollment.rejection_reason,
+        enrolled_at: enrollment.created_at,
+      },
+    }));
   }
 
   async getEligibleCourses(accessToken: string, studentId: number) {
@@ -346,83 +304,159 @@ export class CourseService {
     }
 
     const studentProgramId = studentData.program_id;
-
-    const { data: sessionData, error: sessionError } = await supabase
-      .from('session_students')
-      .select('session_id, sessions(session_status, session_id)')
-      .eq('student_id', studentId);
-
-    if (sessionError) {
-      throw new Error(`Failed to fetch sessions: ${sessionError.message}`);
-    }
-
-    const activeSession = (sessionData || []).find(
-      (s: any) => s.sessions?.session_status === 'ACTIVE',
-    );
-
-    if (!activeSession) {
-      return [];
-      // No active session for the student
-    }
-
-    const sessionId = activeSession.session_id;
+    const activeSessionIds = await this.sharedSessionService.getActiveSessionIds(supabase);
 
     const { data: eligibleCourses, error: courseError } = await supabase
       .from('session_courses')
       .select(
         `
-      course_id,
-      status,
-      courses (
-        *,
-        enrollments (
-          student_id,
-          enrollment_status
-        ),
-        program_courses (
-          program_id
-        )
+          course_id,
+          status,
+          courses (
+            *,
+            enrollments (
+              session_id,
+              enrollment_status,
+              rejection_reason,
+              created_at,
+              updated_at
+            ),
+            program_courses (
+              program_id
+            )
+          )
+        `,
       )
-    `,
-      )
-      .eq('session_id', sessionId);
+      .in('session_id', activeSessionIds)
+      .eq('courses.program_courses.program_id', studentProgramId)
+      .eq('courses.enrollments.student_id', studentId)
+      .in('courses.enrollments.session_id', activeSessionIds);
 
     if (courseError) {
-      throw new Error(
-        `Failed to fetch eligible courses: ${courseError.message}`,
-      );
+      throw new Error(`Failed to fetch eligible courses: ${courseError.message}`);
     }
 
-    const filteredCourses = (eligibleCourses || []).filter((item: any) => {
-      const programCourses = item.courses?.program_courses || [];
-      return programCourses.some((pc) => pc.program_id === studentProgramId);
-    });
+    const processedCourses = (eligibleCourses ?? []).map((record) => {
+      const item = record as unknown as Pick<SessionCourse, 'course_id' | 'status'> & {
+        courses: CourseType & {
+          enrollments: Pick<
+            Enrollment,
+            'session_id' | 'enrollment_status' | 'rejection_reason' | 'created_at' | 'updated_at'
+          >[];
+          program_courses: Pick<ProgramCourse, 'program_id'>[];
+        };
+      };
 
-    const processedCourses = filteredCourses.map((item) => {
-      const course: any = item.courses;
+      const course = item.courses;
 
-      const uniqueEnrolledStudents = new Set(
-        (course.enrollments || [])
-          .filter((enrollment) =>
-            ['APPROVED', 'ACTIVE', 'COMPLETED'].includes(
-              enrollment.enrollment_status,
-            ),
-          )
-          .map((e) => e.student_id),
+      const inActiveSession = true;
+      const enrolledStatusList = ['APPROVED', 'ACTIVE', 'COMPLETED'];
+      const uniquePrograms = new Set((course.program_courses || []).map((pc) => pc.program_id));
+      const isCourseOpenForSession = item.status === 'OPEN';
+      const hasAcceptedEnrollment = course.enrollments.some((enrollment) =>
+        enrolledStatusList.includes(enrollment.enrollment_status),
       );
 
-      const uniquePrograms = new Set(
-        (course.program_courses || []).map((pc) => pc.program_id),
-      );
-
-      const { enrollments, program_courses, ...courseData } = course;
+      const hasPendingEnrollment = course.enrollments.some((enrollment) => enrollment.enrollment_status === 'PENDING');
 
       return {
-        ...courseData,
-        total_enrolled_students: uniqueEnrolledStudents.size,
+        ...omit(course, ['enrollments', 'program_courses']),
+        in_active_session: inActiveSession,
+        is_enrolled: hasAcceptedEnrollment,
+        can_enroll: inActiveSession && isCourseOpenForSession && !hasPendingEnrollment,
+        can_request: inActiveSession && !hasPendingEnrollment,
+        student_course_enrollements: course.enrollments,
+        active_session_ids: activeSessionIds,
         total_programs: uniquePrograms.size,
         availability_status: item.status,
-        session_id: sessionId,
+      };
+    });
+
+    return processedCourses;
+  }
+
+  async getStudentProgramCourses(accessToken: string, studentId: number) {
+    const supabase = this.supabaseService.getClientWithAuth(accessToken);
+
+    const { data: studentData, error: studentError } = await supabase
+      .from('students')
+      .select('program_id')
+      .eq('student_id', studentId)
+      .single();
+
+    if (studentError) {
+      throw new Error(`Failed to fetch student: ${studentError.message}`);
+    }
+
+    const studentProgramId = studentData.program_id;
+    const activeSessionIds = await this.sharedSessionService.getActiveSessionIds(supabase);
+
+    const { data: programCourses, error: courseError } = await supabase
+      .from('program_courses')
+      .select(
+        `
+          course_id,
+          courses (
+            *,
+            enrollments (
+              session_id,
+              enrollment_status,
+              rejection_reason,
+              created_at,
+              updated_at
+            ),
+            program_courses (
+              program_id
+            ),
+            session_courses (
+              status
+            )
+          )
+        `,
+      )
+      .eq('program_id', studentProgramId)
+      .eq(`courses.enrollments.student_id`, studentId)
+      .in(`courses.session_courses.session_id`, activeSessionIds)
+      .in('courses.enrollments.session_id', activeSessionIds);
+
+    if (courseError) {
+      throw new Error(`Failed to fetch program courses: ${courseError.message}`);
+    }
+
+    const processedCourses = programCourses.map((record) => {
+      const item = record as unknown as Pick<ProgramCourse, 'course_id'> & {
+        courses: CourseType & {
+          enrollments: Pick<
+            Enrollment,
+            'session_id' | 'enrollment_status' | 'rejection_reason' | 'created_at' | 'updated_at'
+          >[];
+          program_courses: Pick<ProgramCourse, 'program_id'>[];
+          session_courses: Pick<SessionCourse, 'status'>[];
+        };
+      };
+
+      const course = item.courses;
+
+      const inActiveSession = !!course.session_courses.length;
+      const enrolledStatusList = ['APPROVED', 'ACTIVE', 'COMPLETED'];
+      const uniquePrograms = new Set((course.program_courses || []).map((pc) => pc.program_id));
+      const isCourseOpenForSession = course.session_courses.some((course) => course.status === 'OPEN');
+      const hasAcceptedEnrollment = course.enrollments.some((enrollment) =>
+        enrolledStatusList.includes(enrollment.enrollment_status),
+      );
+
+      const hasPendingEnrollment = course.enrollments.some((enrollment) => enrollment.enrollment_status === 'PENDING');
+
+      return {
+        ...omit(course, ['enrollments', 'program_courses']),
+        in_active_session: inActiveSession,
+        is_enrolled: hasAcceptedEnrollment,
+        can_enroll: inActiveSession && isCourseOpenForSession && !hasPendingEnrollment,
+        can_request: inActiveSession && !hasPendingEnrollment,
+        student_course_enrollements: course.enrollments,
+        active_session_ids: activeSessionIds,
+        total_programs: uniquePrograms.size,
+        availability_status: isCourseOpenForSession ? 'OPEN' : 'CLOSED',
       };
     });
 

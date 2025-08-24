@@ -1,8 +1,9 @@
+import * as path from 'node:path';
+import * as process from 'node:process';
 import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import * as fs from 'fs-extra';
-import * as path from 'path';
 import { AppModule } from './app.module';
 import { ResponseInterceptor } from './interceptors/response.interceptor';
 
@@ -37,10 +38,7 @@ async function bootstrap() {
     .map((origin) => origin.trim());
 
   app.enableCors({
-    origin: (
-      origin: string | undefined,
-      callback: (err: Error | null, allow?: boolean) => void,
-    ) => {
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
       if (!origin || allowedOrigins?.includes(origin)) {
         callback(null, true);
       } else {
@@ -54,6 +52,7 @@ async function bootstrap() {
   app.useGlobalInterceptors(new ResponseInterceptor());
 
   await app.listen(port);
+  console.log(`App is listening on port ${port}`);
 
   const src = path.join(__dirname, '..', 'templates');
   const dest = path.join(__dirname, 'templates');

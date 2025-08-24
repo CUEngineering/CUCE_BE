@@ -1,8 +1,10 @@
+import type { Request } from 'express';
 import {
   Body,
   Controller,
   Delete,
   Get,
+  Inject,
   Param,
   Patch,
   Post,
@@ -12,14 +14,10 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { Request } from 'express';
-import type { File as MulterFile } from 'multer';
+import { File as MulterFile } from 'multer';
 import { Public } from 'src/common/public.decorator';
 import { AuthGuard } from '../../../supabase/auth.guard';
-import {
-  AcceptStudentInviteDto,
-  InviteStudentDto,
-} from '../dto/invite-student.dto';
+import { AcceptStudentInviteDto, InviteStudentDto } from '../dto/invite-student.dto';
 import { StudentsService } from '../services/students.service';
 
 interface InvitationResult {
@@ -32,7 +30,10 @@ interface InvitationResult {
 @Controller('students')
 @UseGuards(AuthGuard)
 export class StudentsController {
-  constructor(private readonly studentsService: StudentsService) {}
+  constructor(
+    @Inject(StudentsService)
+    private readonly studentsService: StudentsService,
+  ) {}
 
   @Get()
   async findAll(@Req() req: Request & { accessToken: string }) {
@@ -40,13 +41,10 @@ export class StudentsController {
   }
 
   @Get(':id')
-  async findOne(
-    @Param('id') id: number,
-    @Req() req: Request & { accessToken: string },
-  ) {
+  async findOne(@Param('id') id: number, @Req() req: Request & { accessToken: string }) {
     return this.studentsService.findOne(id, req.accessToken);
   }
-  //Update students
+  // Update students
   //   @Patch(':id')
   //   async update(
   //     @Param('id') id: number,
@@ -57,14 +55,8 @@ export class StudentsController {
   //   }
 
   @Post('invite')
-  async invite(
-    @Body() inviteDto: InviteStudentDto,
-    @Req() req: Request & { accessToken: string },
-  ) {
-    const result = await this.studentsService.inviteStudent(
-      inviteDto,
-      req.accessToken,
-    );
+  async invite(@Body() inviteDto: InviteStudentDto, @Req() req: Request & { accessToken: string }) {
+    const result = await this.studentsService.inviteStudent(inviteDto, req.accessToken);
 
     return {
       success: true,
@@ -74,28 +66,19 @@ export class StudentsController {
   }
 
   @Get(':id/sessions')
-  async getStudentSessions(
-    @Param('id') id: number,
-    @Req() req: Request & { accessToken: string },
-  ) {
+  async getStudentSessions(@Param('id') id: number, @Req() req: Request & { accessToken: string }) {
     return this.studentsService.getStudentSessions(id, req.accessToken);
   }
 
   @Get(':id/stats')
-  async getStudentStats(
-    @Param('id') id: number,
-    @Req() req: Request & { accessToken: string },
-  ) {
+  async getStudentStats(@Param('id') id: number, @Req() req: Request & { accessToken: string }) {
     return this.studentsService.getStudentStats(id, req.accessToken);
   }
 
   @Public()
   @UseInterceptors(FileInterceptor('profile_picture'))
   @Post('accept-invite')
-  async acceptStudentInvite(
-    @Body() dto: AcceptStudentInviteDto,
-    @UploadedFile() file?: MulterFile,
-  ) {
+  async acceptStudentInvite(@Body() dto: AcceptStudentInviteDto, @UploadedFile() file?: MulterFile) {
     const result = await this.studentsService.acceptStudentInvite(dto, file);
 
     return {
@@ -108,18 +91,12 @@ export class StudentsController {
   }
 
   @Patch(':id/reject')
-  async rejectStudent(
-    @Param('id') id: number,
-    @Req() req: Request & { accessToken: string },
-  ) {
+  async rejectStudent(@Param('id') id: number, @Req() req: Request & { accessToken: string }) {
     return this.studentsService.rejectStudent(id, req.accessToken);
   }
 
   @Delete(':id')
-  async deleteStudent(
-    @Param('id') id: number,
-    @Req() req: Request & { accessToken: string },
-  ) {
+  async deleteStudent(@Param('id') id: number, @Req() req: Request & { accessToken: string }) {
     return this.studentsService.deleteStudent(id, req.accessToken);
   }
 }
