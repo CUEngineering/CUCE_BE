@@ -1,4 +1,6 @@
 import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { session_students, sessions } from '@prisma/client';
+import { isPast } from 'date-fns';
 import { omit } from 'lodash';
 import { Enrollment } from 'src/modules/enrollments/types/enrollment.types';
 import { ProgramCourse } from 'src/modules/programs/types/program.types';
@@ -290,21 +292,8 @@ export class CourseService {
     }));
   }
 
-  async getEligibleCourses(accessToken: string, studentId: number) {
-    const supabase = this.supabaseService.getClientWithAuth(accessToken);
-
-    const { data: studentData, error: studentError } = await supabase
-      .from('students')
-      .select('program_id')
-      .eq('student_id', studentId)
-      .single();
-
-    if (studentError) {
-      throw new Error(`Failed to fetch student: ${studentError.message}`);
-    }
-
-    const studentProgramId = studentData.program_id;
-    const activeSessionIds = await this.sharedSessionService.getActiveSessionIds(supabase);
+  async getStudentCoursesInSessionsUsingId(studentId: number, sessionIds: (string | number)[]) {
+    const supabase = this.sharedSessionService.adminSupabaseClient;
 
     const { data: eligibleCourses, error: courseError } = await supabase
       .from('session_courses')
@@ -312,7 +301,15 @@ export class CourseService {
         `
           course_id,
           status,
-          courses (
+          sessions!inner (
+            session_id,
+            session_status,
+            enrollment_deadline,
+            session_students (
+              *
+            )
+          ),
+          courses!inner (
             *,
             enrollments (
               session_id,
@@ -321,16 +318,23 @@ export class CourseService {
               created_at,
               updated_at
             ),
-            program_courses (
-              program_id
+            program_courses!inner (
+              program_id,
+              programs!inner (
+                students!inner (
+                  student_id,
+                  status
+                )
+              )
             )
           )
         `,
       )
-      .in('session_id', activeSessionIds)
-      .eq('courses.program_courses.program_id', studentProgramId)
+      .in('session_id', sessionIds)
+      .eq('courses.program_courses.programs.students.student_id', studentId)
       .eq('courses.enrollments.student_id', studentId)
-      .in('courses.enrollments.session_id', activeSessionIds);
+      .eq('sessions.session_students.student_id', studentId)
+      .in('courses.enrollments.session_id', sessionIds);
 
     if (courseError) {
       throw new Error(`Failed to fetch eligible courses: ${courseError.message}`);
@@ -338,18 +342,28 @@ export class CourseService {
 
     const processedCourses = (eligibleCourses ?? []).map((record) => {
       const item = record as unknown as Pick<SessionCourse, 'course_id' | 'status'> & {
+        sessions: Pick<sessions, 'session_id' | 'enrollment_deadline' | 'session_status'> & {
+          session_students: session_students[];
+        };
         courses: CourseType & {
           enrollments: Pick<
             Enrollment,
             'session_id' | 'enrollment_status' | 'rejection_reason' | 'created_at' | 'updated_at'
           >[];
-          program_courses: Pick<ProgramCourse, 'program_id'>[];
+          program_courses: (Pick<ProgramCourse, 'program_id'> & {
+            programs: {
+              students: {
+                status: string;
+                student_id: number;
+              };
+            };
+          })[];
         };
       };
 
       const course = item.courses;
 
-      const inActiveSession = true;
+      const inActiveSession = item.sessions.session_status === 'ACTIVE';
       const enrolledStatusList = ['APPROVED', 'ACTIVE', 'COMPLETED'];
       const uniquePrograms = new Set((course.program_courses || []).map((pc) => pc.program_id));
       const isCourseOpenForSession = item.status === 'OPEN';
@@ -358,15 +372,31 @@ export class CourseService {
       );
 
       const hasPendingEnrollment = course.enrollments.some((enrollment) => enrollment.enrollment_status === 'PENDING');
+      const enrollmentDeadline = item.sessions.enrollment_deadline;
+      const hasPastEnrollmentDeadline = isPast(new Date(enrollmentDeadline));
+      const isStudentInSession = !!item.sessions.session_students?.length;
+      const isStudentInActiveSession = isStudentInSession && inActiveSession;
 
       return {
         ...omit(course, ['enrollments', 'program_courses']),
         in_active_session: inActiveSession,
         is_enrolled: hasAcceptedEnrollment,
-        can_enroll: !(hasAcceptedEnrollment || hasPendingEnrollment) && inActiveSession && isCourseOpenForSession,
-        can_request: !(hasAcceptedEnrollment || hasPendingEnrollment) && inActiveSession,
+        is_student_in_session: isStudentInSession,
+        is_student_in_active_session: isStudentInActiveSession,
+        session_id: item.sessions.session_id,
+        can_enroll:
+          !(hasAcceptedEnrollment || hasPendingEnrollment) &&
+          inActiveSession &&
+          !hasPastEnrollmentDeadline &&
+          isStudentInActiveSession &&
+          isCourseOpenForSession,
+        can_request:
+          !(hasAcceptedEnrollment || hasPendingEnrollment) &&
+          inActiveSession &&
+          !hasPastEnrollmentDeadline &&
+          isStudentInActiveSession,
+        enrollment_deadline: enrollmentDeadline,
         student_course_enrollements: course.enrollments,
-        active_session_ids: activeSessionIds,
         total_programs: uniquePrograms.size,
         availability_status: item.status,
       };
@@ -375,63 +405,120 @@ export class CourseService {
     return processedCourses;
   }
 
-  async getStudentProgramCourses(accessToken: string, studentId: number) {
+  async getEligibleCourses(accessToken: string, studentId: number) {
     const supabase = this.supabaseService.getClientWithAuth(accessToken);
-
-    const { data: studentData, error: studentError } = await supabase
-      .from('students')
-      .select('program_id')
-      .eq('student_id', studentId)
-      .single();
-
-    if (studentError) {
-      throw new Error(`Failed to fetch student: ${studentError.message}`);
-    }
-
-    const studentProgramId = studentData.program_id;
     const activeSessionIds = await this.sharedSessionService.getActiveSessionIds(supabase);
 
-    const { data: programCourses, error: courseError } = await supabase
+    const { data: activeSessionStudents, error: activeSessionStudentError } = await supabase
+      .from('session_students')
+      .select(
+        `
+          session_id,
+          student_id,
+          created_at,
+          updated_at
+        `,
+      )
+      .in('session_id', activeSessionIds)
+      .eq('student_id', studentId)
+      .limit(1);
+
+    if (activeSessionStudentError) {
+      throw new Error(`Failed to check if student is in active session: ${activeSessionStudentError.message}`);
+    }
+
+    if (!activeSessionStudents?.length) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'NOT_IN_ACTIVE_SESSION',
+        message: 'Student is currently not in active session. Kindly contact your registrar for possible resolution.',
+      });
+    }
+
+    const processedCourses = (await this.getStudentCoursesInSessionsUsingId(studentId, activeSessionIds)).map(
+      (course) => {
+        return {
+          ...course,
+          active_session_ids: activeSessionIds,
+        };
+      },
+    );
+
+    return processedCourses;
+  }
+
+  async getStudentProgramCoursesUsingId(studentId: number) {
+    const supabase = this.sharedSessionService.adminSupabaseClient;
+
+    const { data: programCourses, error: programCourseError } = await supabase
       .from('program_courses')
       .select(
         `
           course_id,
-          courses (
+          program_id,
+          programs!inner (
+            students!inner (
+              student_id
+            )
+          ),
+          courses!inner (
             *,
             enrollments (
               session_id,
               enrollment_status,
               rejection_reason,
               created_at,
-              updated_at
-            ),
-            program_courses (
-              program_id
+              updated_at,
+              sessions!inner (
+                session_id,
+                session_status,
+                enrollment_deadline
+              )
             ),
             session_courses (
-              status
+              status,
+              sessions!inner (
+                session_id,
+                session_status,
+                enrollment_deadline,
+                session_students (
+                  *
+                )
+              )
             )
           )
         `,
       )
-      .eq('program_id', studentProgramId)
+      .eq('programs.students.student_id', studentId)
       .eq(`courses.enrollments.student_id`, studentId)
-      .in(`courses.session_courses.session_id`, activeSessionIds)
-      .in('courses.enrollments.session_id', activeSessionIds);
+      .eq(`courses.session_courses.sessions.session_students.student_id`, studentId)
+      .eq(`courses.session_courses.sessions.session_status`, 'ACTIVE')
+      .eq('courses.enrollments.sessions.session_status', 'ACTIVE');
 
-    if (courseError) {
-      throw new Error(`Failed to fetch program courses: ${courseError.message}`);
+    if (programCourseError) {
+      throw new Error(`Failed to fetch program courses: ${programCourseError.message}`);
     }
 
+    const uniquePrograms = new Set((programCourses || []).map((pc) => pc.program_id));
     const processedCourses = programCourses.map((record) => {
-      const item = record as unknown as Pick<ProgramCourse, 'course_id'> & {
+      const item = record as unknown as Pick<ProgramCourse, 'course_id' | 'program_id'> & {
+        programs: {
+          students: {
+            student_id: number;
+          }[];
+        };
         courses: CourseType & {
-          enrollments: Pick<
+          enrollments: (Pick<
             Enrollment,
             'session_id' | 'enrollment_status' | 'rejection_reason' | 'created_at' | 'updated_at'
-          >[];
-          program_courses: Pick<ProgramCourse, 'program_id'>[];
-          session_courses: Pick<SessionCourse, 'status'>[];
+          > & {
+            sessions: Pick<sessions, 'session_id' | 'session_status' | 'enrollment_deadline'>;
+          })[];
+          session_courses: (Pick<SessionCourse, 'status'> & {
+            sessions: Pick<sessions, 'session_id' | 'session_status' | 'enrollment_deadline'> & {
+              session_students: session_students[];
+            };
+          })[];
         };
       };
 
@@ -439,24 +526,55 @@ export class CourseService {
 
       const inActiveSession = !!course.session_courses.length;
       const enrolledStatusList = ['APPROVED', 'ACTIVE', 'COMPLETED'];
-      const uniquePrograms = new Set((course.program_courses || []).map((pc) => pc.program_id));
       const isCourseOpenForSession = course.session_courses.some((course) => course.status === 'OPEN');
       const hasAcceptedEnrollment = course.enrollments.some((enrollment) =>
         enrolledStatusList.includes(enrollment.enrollment_status),
       );
 
       const hasPendingEnrollment = course.enrollments.some((enrollment) => enrollment.enrollment_status === 'PENDING');
+      const sessionCourse = course.session_courses.length ? course.session_courses[0] : undefined;
+      const enrollmentDeadline = sessionCourse?.sessions?.enrollment_deadline;
+
+      const hasPastEnrollmentDeadline = enrollmentDeadline ? isPast(new Date(enrollmentDeadline)) : false;
+      const isStudentInSession = !!sessionCourse?.sessions?.session_students?.length;
+      const isStudentInActiveSession = inActiveSession && !!sessionCourse?.sessions?.session_students?.length;
 
       return {
-        ...omit(course, ['enrollments', 'program_courses']),
+        ...omit(course, ['enrollments', 'session_courses']),
         in_active_session: inActiveSession,
         is_enrolled: hasAcceptedEnrollment,
-        can_enroll: !(hasAcceptedEnrollment || hasPendingEnrollment) && inActiveSession && isCourseOpenForSession,
-        can_request: !(hasAcceptedEnrollment || hasPendingEnrollment) && inActiveSession,
+        is_student_in_session: isStudentInSession,
+        is_student_in_active_session: isStudentInActiveSession,
+        session_id: sessionCourse?.sessions?.session_id,
+        can_enroll:
+          !(hasAcceptedEnrollment || hasPendingEnrollment) &&
+          inActiveSession &&
+          !hasPastEnrollmentDeadline &&
+          isStudentInActiveSession &&
+          isCourseOpenForSession,
+        can_request:
+          !(hasAcceptedEnrollment || hasPendingEnrollment) &&
+          inActiveSession &&
+          !hasPastEnrollmentDeadline &&
+          isStudentInActiveSession,
+        enrollment_deadline: enrollmentDeadline,
         student_course_enrollements: course.enrollments,
-        active_session_ids: activeSessionIds,
         total_programs: uniquePrograms.size,
         availability_status: isCourseOpenForSession ? 'OPEN' : 'CLOSED',
+      };
+    });
+
+    return processedCourses;
+  }
+
+  async getStudentProgramCourses(accessToken: string, studentId: number) {
+    const supabase = this.supabaseService.getClientWithAuth(accessToken);
+    const activeSessionIds = await this.sharedSessionService.getActiveSessionIds(supabase);
+
+    const processedCourses = (await this.getStudentProgramCoursesUsingId(studentId)).map((course) => {
+      return {
+        ...course,
+        active_session_ids: activeSessionIds,
       };
     });
 
