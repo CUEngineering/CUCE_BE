@@ -1,19 +1,23 @@
 import type { Request } from 'express';
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Inject,
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { UserType } from '@prisma/client';
 import { File as MulterFile } from 'multer';
 import { Public } from 'src/common/public.decorator';
 import { AuthGuard } from '../../../supabase/auth.guard';
@@ -36,8 +40,23 @@ export class StudentsController {
   ) {}
 
   @Get()
-  async findAll(@Req() req: Request & { accessToken: string }) {
-    return this.studentsService.findAll(req.accessToken);
+  async findAll(
+    @Req() req: Request & { accessToken: string; user: { role: Lowercase<UserType>; [key: string]: string } },
+    @Query('assigned_to') assignedTo: 'all' | 'none' | 'me' | 'others',
+    @Query('session_id') sessionId?: string | number,
+  ) {
+    const role = String(req.user.role).toLowerCase();
+    if (!['admin', 'registrar'].includes(role)) {
+      throw new ForbiddenException('Only admins and registrars can view student list');
+    }
+
+    return this.studentsService.findAll({
+      accessToken: req.accessToken,
+      role: role as 'admin' | 'registrar',
+      roleId: role === 'admin' ? req.user.admin_id : req.user.registrar_id,
+      sessionId,
+      assignedTo: String(assignedTo || 'all').toLowerCase() as 'all' | 'none' | 'me' | 'others',
+    });
   }
 
   @Get(':id')

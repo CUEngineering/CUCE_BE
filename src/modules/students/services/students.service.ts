@@ -1,4 +1,4 @@
-import type { EnrollmentStatus } from '@prisma/client';
+import type { EnrollmentStatus, invitations, programs, registrars, students } from '@prisma/client';
 import type { File as MulterFile } from 'multer';
 import type { Invitation } from 'src/modules/invitations/types/invitation.types';
 import type { AcceptStudentInviteDto, InviteStudentDto } from '../dto/invite-student.dto';
@@ -22,11 +22,12 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { InvitationStatus, UserType } from '@prisma/client';
-// eslint-disable-next-line ts/consistent-type-imports
+import { InvitationStatus, Prisma, UserType } from '@prisma/client';
+
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { orderBy, pick, set } from 'lodash';
 import { RegistrarsService } from 'src/modules/registrars/services/registrars.service';
+import { SharedSessionService } from 'src/modules/shared/services/session.service';
 import { sendEmail } from 'src/utils/email.helper';
 import { encodeEmail } from 'src/utils/emailEncrypt';
 import { SupabaseService } from '../../../supabase/supabase.service';
@@ -51,6 +52,8 @@ export class StudentsService {
     private readonly supabaseService: SupabaseService,
     @Inject(ConfigService)
     private readonly configService: ConfigService,
+    @Inject(SharedSessionService)
+    private readonly sharedSessionService: SharedSessionService,
   ) {
     const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
     const supabaseServiceKey = this.configService.get<string>('SUPABASE_SERVICE_ROLE_KEY');
@@ -108,43 +111,261 @@ export class StudentsService {
     });
   }
 
-  async findAll(accessToken: string): Promise<StudentWithRegistrar[]> {
+  async findAll(options: {
+    accessToken: string;
+    role: 'admin' | 'registrar';
+    roleId: string | number;
+    sessionId?: string | number;
+    assignedTo: 'all' | 'none' | 'me' | 'others';
+  }): Promise<StudentWithRegistrar[]> {
+    const { accessToken, role, roleId, sessionId, assignedTo } = options;
+
     try {
       if (!accessToken) {
         throw new UnauthorizedException('Access token is required');
       }
 
-      const result = (await this.supabaseService.select(accessToken, 'students', {
-        columns: `
-          student_id,
-          reg_number,
-          first_name,
-          last_name,
-          email,
-          profile_picture,
-          program_id,
-          program:programs(program_name, program_type, total_credits),
-          enrollments(
-            enrollment_id,
-            registrar_id,
-            sessions(session_status),
-            registrars(registrar_id, first_name, last_name, email, profile_picture)
-          )
-        `,
-        filter: {
-          'enrollments.sessions.session_status': { eq: 'ACTIVE' },
-          'enrollments.enrollment_status': { eq: 'APPROVED' },
-        },
-      })) as unknown as StudentWithRegistrar[];
+      if (role === 'registrar' && assignedTo === 'others') {
+        return [];
+      }
 
-      if (!result) {
+      let registrarId: string = String(role === 'registrar' ? (roleId ?? '') : '');
+      if (role === 'admin') {
+        const adminRegistrarResp = await this.sharedSessionService.prismaClient.$queryRaw<
+          [
+            {
+              registrar_id: string | number;
+            },
+          ]
+        >`
+          select
+            r.registrar_id
+          from
+            admins a
+          inner join
+            registrars r
+            on (
+              a.email = r.email
+            )
+          where
+            a.admin_id = ${roleId}
+          limit 1
+        `;
+
+        if (!adminRegistrarResp.length) {
+          throw new BadRequestException(`Administrator doesn't have a registrar account`);
+        }
+
+        registrarId = String(adminRegistrarResp[0].registrar_id);
+      }
+
+      console.log('Sent options =====> ', { options, registrarId });
+
+      if (!registrarId) {
+        throw new BadRequestException(`Registrar identifier is invalid`);
+      }
+
+      const sql = `
+        select
+          s.student_id,
+          s.reg_number,
+          s.first_name,
+          s.last_name,
+          s.email,
+          s.profile_picture,
+          s.program_id,
+          s.status,
+          s.created_at,
+          s.updated_at,
+          jsonb_build_object(
+            'program_id',
+            p.program_id,
+            'program_name',
+            p.program_name,
+            'program_type',
+            p.program_type,
+            'total_credits',
+            p.total_credits
+          ) as program,
+          (
+            select
+              jsonb_build_object(
+                'invitation_id',
+                i.invitation_id,
+                'email',
+                i.email,
+                'expires_at',
+                i.expires_at,
+                'status',
+                i.status,
+                'user_type',
+                i.user_type,
+                'created_at',
+                i.created_at,
+                'updated_at',
+                i.updated_at
+              )
+            from
+              invitations i
+            where
+              i.user_type = 'STUDENT'
+              and
+              i.email = s.email
+            order by
+              i.expires_at asc
+            limit 1
+          ) as invitation,
+          (
+            case
+              when srs.student_id is null then null
+            else
+              jsonb_build_object(
+                'registrar_id',
+                r.registrar_id,
+                'first_name',
+                r.first_name,
+                'last_name',
+                r.last_name,
+                'email',
+                r.email,
+                'profile_picture',
+                r.profile_picture,
+                'is_suspended',
+                r.is_suspended,
+                'is_deactivated',
+                r.is_deactivated
+              )
+            end
+          ) as registrar,
+          (
+            case 
+            when ss.session_status = 'ACTIVE' then -- when session id sent is specific and the session is active
+              not exists (
+                select
+                  1
+                from
+                  sessions iss
+                inner join
+                  student_registrar_sessions isrs
+                  on (
+                    isrs.session_id = iss.session_id
+                  )
+                inner join
+                  students "is"
+                  on (
+                    "is"."student_id" = isrs."student_id"
+                  )
+                where
+                  iss.session_status = 'ACTIVE'
+                  and
+                  "is"."student_id" = s."student_id"
+                limit 1
+              )
+            when ss.session_id is null then  -- when session id sent is all
+              not exists (
+                select
+                  1
+                from
+                  sessions iss
+                inner join
+                  student_registrar_sessions isrs
+                  on (
+                    isrs.session_id = iss.session_id
+                  )
+                inner join
+                  students "is"
+                  on (
+                    "is"."student_id" = isrs."student_id"
+                  )
+                where
+                  iss.session_status = 'ACTIVE'
+                  and
+                  "is"."student_id" = s."student_id"
+                limit 1
+              )
+            else
+              false
+            end
+          ) as can_claim
+        from
+          students s
+        inner join
+          programs p
+          on (
+            p.program_id = s.program_id
+          )
+        ${
+          sessionId
+            ? `
+                inner join
+                  sessions ss
+                  on (
+                    ss.session_id = ${sessionId}
+                  )
+              `
+            : ''
+        }
+        ${['me', 'others'].includes(assignedTo) ? `inner join` : `left join`}
+          student_registrar_sessions srs
+          on (
+            srs.student_id = s.student_id
+          )
+        left join
+          registrars r
+          on (
+            srs.registrar_id = r.registrar_id
+          )
+        where
+          ${
+            assignedTo === 'me'
+              ? `srs.registrar_id = ${registrarId}`
+              : assignedTo === 'none'
+                ? `srs.registrar_id is null`
+                : assignedTo === 'others'
+                  ? `srs.registrar_id <> ${registrarId}`
+                  : 's.student_id > 0'
+          }
+          ${
+            sessionId
+              ? `
+                  and (
+                    case
+                    when '${assignedTo}' = 'none' then
+                      srs.session_id is null
+                    when '${assignedTo}' = 'all' then
+                      true
+                    when '${assignedTo}' = 'me' then
+                      srs.session_id = ${sessionId}
+                      and
+                      srs.registrar_id = ${registrarId}
+                    when '${assignedTo}' = 'others' then
+                      srs.session_id = ${sessionId}
+                      and
+                      srs.registrar_id = ${registrarId}
+                    else
+                      true
+                    end
+                  )
+                `
+              : ''
+          }
+        group by
+          s.student_id,
+          p.program_id,
+          ${sessionId ? 'ss.session_id,' : ''}
+          srs.student_id,
+          r.registrar_id
+      `;
+
+      const prismaSql = Prisma.sql([sql]);
+      const students = await this.sharedSessionService.prismaClient.$queryRaw<StudentWithRegistrar[]>(prismaSql);
+
+      if (!students.length) {
         this.logger.warn('No students found in the database');
         return [];
       }
 
-      await this.attachInvitations(result, accessToken);
-
-      return result;
+      return students;
     } catch (error) {
       if (error instanceof UnauthorizedException) {
         throw error;
