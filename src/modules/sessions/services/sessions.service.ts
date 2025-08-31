@@ -474,7 +474,7 @@ export class SessionsService {
           end_date,
           enrollment_deadline,
           session_status,
-          session_courses(session_id, status, adjusted_capacity),
+          session_courses(session_id, course_id, status, adjusted_capacity, created_at, updated_at),
         session_students(session_id, student_id),
           created_at,
           updated_at

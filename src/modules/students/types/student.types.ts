@@ -127,4 +127,5 @@ export type StudentWithRegistrar = Pick<
     'registrar_id' | 'first_name' | 'last_name' | 'email' | 'profile_picture' | 'is_deactivated' | 'is_suspended'
   >;
   can_claim: boolean;
+  program_course_count: number;
 };

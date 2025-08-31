@@ -292,7 +292,7 @@ export class CourseService {
     }));
   }
 
-  async getStudentCoursesInSessionsUsingId(studentId: number, sessionIds: (string | number)[]) {
+  async getStudentCoursesInSessionsUsingId(studentId: number | string, sessionIds: (string | number)[]) {
     const supabase = this.sharedSessionService.adminSupabaseClient;
 
     const { data: eligibleCourses, error: courseError } = await supabase
@@ -447,7 +447,7 @@ export class CourseService {
     return processedCourses;
   }
 
-  async getStudentProgramCoursesUsingId(studentId: number) {
+  async getStudentProgramCoursesUsingId(studentId: number | string) {
     const supabase = this.sharedSessionService.adminSupabaseClient;
 
     const { data: programCourses, error: programCourseError } = await supabase

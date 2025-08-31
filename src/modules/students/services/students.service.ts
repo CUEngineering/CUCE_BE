@@ -1,4 +1,4 @@
-import type { EnrollmentStatus, invitations, programs, registrars, students } from '@prisma/client';
+import type { EnrollmentStatus, invitations, programs, registrars, sessions, students } from '@prisma/client';
 import type { File as MulterFile } from 'multer';
 import type { Invitation } from 'src/modules/invitations/types/invitation.types';
 import type { AcceptStudentInviteDto, InviteStudentDto } from '../dto/invite-student.dto';
@@ -25,7 +25,10 @@ import { ConfigService } from '@nestjs/config';
 import { InvitationStatus, Prisma, UserType } from '@prisma/client';
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import isNumeric from 'fast-isnumeric';
 import { orderBy, pick, set } from 'lodash';
+import { bignumber } from 'mathjs';
+import { CourseService } from 'src/modules/courses/services/course.service';
 import { RegistrarsService } from 'src/modules/registrars/services/registrars.service';
 import { SharedSessionService } from 'src/modules/shared/services/session.service';
 import { sendEmail } from 'src/utils/email.helper';
@@ -54,6 +57,8 @@ export class StudentsService {
     private readonly configService: ConfigService,
     @Inject(SharedSessionService)
     private readonly sharedSessionService: SharedSessionService,
+    @Inject(CourseService)
+    private readonly courseService: CourseService,
   ) {
     const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
     const supabaseServiceKey = this.configService.get<string>('SUPABASE_SERVICE_ROLE_KEY');
@@ -159,8 +164,6 @@ export class StudentsService {
         registrarId = String(adminRegistrarResp[0].registrar_id);
       }
 
-      console.log('Sent options =====> ', { options, registrarId });
-
       if (!registrarId) {
         throw new BadRequestException(`Registrar identifier is invalid`);
       }
@@ -238,55 +241,74 @@ export class StudentsService {
             end
           ) as registrar,
           (
-            case 
-            when ss.session_status = 'ACTIVE' then -- when session id sent is specific and the session is active
-              not exists (
-                select
-                  1
-                from
-                  sessions iss
-                inner join
-                  student_registrar_sessions isrs
-                  on (
-                    isrs.session_id = iss.session_id
-                  )
-                inner join
-                  students "is"
-                  on (
-                    "is"."student_id" = isrs."student_id"
-                  )
-                where
-                  iss.session_status = 'ACTIVE'
-                  and
-                  "is"."student_id" = s."student_id"
-                limit 1
-              )
-            when ss.session_id is null then  -- when session id sent is all
-              not exists (
-                select
-                  1
-                from
-                  sessions iss
-                inner join
-                  student_registrar_sessions isrs
-                  on (
-                    isrs.session_id = iss.session_id
-                  )
-                inner join
-                  students "is"
-                  on (
-                    "is"."student_id" = isrs."student_id"
-                  )
-                where
-                  iss.session_status = 'ACTIVE'
-                  and
-                  "is"."student_id" = s."student_id"
-                limit 1
-              )
+            case
+            ${
+              sessionId
+                ? `
+                    when ss.session_status = 'ACTIVE' then -- when session id sent is specific and the session is active
+                      not exists (
+                        select
+                          1
+                        from
+                          sessions iss
+                        inner join
+                          student_registrar_sessions isrs
+                          on (
+                            isrs.session_id = iss.session_id
+                          )
+                        inner join
+                          students "is"
+                          on (
+                            "is"."student_id" = isrs."student_id"
+                          )
+                        where
+                          iss.session_status = 'ACTIVE'
+                          and
+                          "is"."student_id" = s."student_id"
+                        limit 1
+                      )
+                  `
+                : `
+                    when true then -- when session id sent is all
+                      not exists (
+                        select
+                          1
+                        from
+                          sessions iss
+                        inner join
+                          student_registrar_sessions isrs
+                          on (
+                            isrs.session_id = iss.session_id
+                          )
+                        inner join
+                          students "is"
+                          on (
+                            "is"."student_id" = isrs."student_id"
+                          )
+                        where
+                          iss.session_status = 'ACTIVE'
+                          and
+                          "is"."student_id" = s."student_id"
+                        limit 1
+                      )
+                  `
+            }
             else
               false
             end
-          ) as can_claim
+          ) as can_claim,
+          coalesce(
+            (
+              select
+                count(pc.course_id)
+              from
+                program_courses pc
+              where
+                pc.program_id = s.program_id
+              limit 1
+            ),
+            0
+          ) as program_course_count
         from
           students s
         inner join
@@ -365,7 +387,10 @@ export class StudentsService {
         return [];
       }
 
-      return students;
+      return students.map((s) => {
+        s.program_course_count = bignumber(s.program_course_count).toNumber();
+        return s;
+      });
     } catch (error) {
       if (error instanceof UnauthorizedException) {
         throw error;
@@ -376,38 +401,165 @@ export class StudentsService {
     }
   }
 
-  async findOne(student_id: number, accessToken: string): Promise<Student> {
-    try {
-      // Get student personal details and program info
-      const result = (await this.supabaseService.select(accessToken, 'students', {
-        filter: { student_id },
-        columns:
-          'student_id, reg_number, first_name, last_name, email, profile_picture, program_id, program:programs(program_name, program_type, total_credits)',
-      })) as unknown as Student[];
+  async findOne(options: {
+    id: number | string;
+    role: 'admin' | 'registrar';
+    roleId: string | number;
+  }): Promise<StudentWithRegistrar> {
+    const { role, roleId, id: studentId } = options;
 
-      if (!result || result.length === 0) {
-        throw new NotFoundException(`Student with ID ${student_id} not found`);
+    try {
+      const sql = `
+        select
+          s.student_id,
+          s.reg_number,
+          s.first_name,
+          s.last_name,
+          s.email,
+          s.profile_picture,
+          s.program_id,
+          s.status,
+          s.created_at,
+          s.updated_at,
+          jsonb_build_object(
+            'program_id',
+            p.program_id,
+            'program_name',
+            p.program_name,
+            'program_type',
+            p.program_type,
+            'total_credits',
+            p.total_credits
+          ) as program,
+          (
+            select
+              jsonb_build_object(
+                'invitation_id',
+                i.invitation_id,
+                'email',
+                i.email,
+                'expires_at',
+                i.expires_at,
+                'status',
+                i.status,
+                'user_type',
+                i.user_type,
+                'created_at',
+                i.created_at,
+                'updated_at',
+                i.updated_at
+              )
+            from
+              invitations i
+            where
+              i.user_type = 'STUDENT'
+              and
+              i.email = s.email
+            order by
+              i.expires_at asc
+            limit 1
+          ) as invitation,
+          (
+            case
+              when srs.student_id is null then null
+            else
+              jsonb_build_object(
+                'registrar_id',
+                r.registrar_id,
+                'first_name',
+                r.first_name,
+                'last_name',
+                r.last_name,
+                'email',
+                r.email,
+                'profile_picture',
+                r.profile_picture,
+                'is_suspended',
+                r.is_suspended,
+                'is_deactivated',
+                r.is_deactivated
+              )
+            end
+          ) as registrar,
+          (
+            not exists (
+              select
+                1
+              from
+                sessions iss
+              inner join
+                student_registrar_sessions isrs
+                on (
+                  isrs.session_id = iss.session_id
+                )
+              inner join
+                students "is"
+                on (
+                  "is"."student_id" = isrs."student_id"
+                )
+              where
+                iss.session_status = 'ACTIVE'
+                and
+                "is"."student_id" = s."student_id"
+              limit 1
+            )
+          ) as can_claim,
+          coalesce(
+            (
+              select
+                count(pc.course_id)
+              from
+                program_courses pc
+              where
+                pc.program_id = s.program_id
+              limit 1
+            ),
+            0
+          ) as program_course_count
+        from
+          students s
+        inner join
+          programs p
+          on (
+            p.program_id = s.program_id
+          )
+        left join
+          student_registrar_sessions srs
+          on (
+            srs.student_id = s.student_id
+          )
+        left join
+          sessions ss
+          on (
+            srs.session_id = ss.session_id
+            and
+            ss.session_status = 'ACTIVE'
+          )
+        left join
+          registrars r
+          on (
+            srs.registrar_id = r.registrar_id
+          )
+        where
+          s.student_id = ${studentId}
+        limit 1
+      `;
+
+      const prismaSql = Prisma.sql([sql]);
+      const studentTuple = await this.sharedSessionService.prismaClient.$queryRaw<[StudentWithRegistrar]>(prismaSql);
+
+      if (!studentTuple.length) {
+        this.logger.warn('No student found in the database');
+        throw new NotFoundException(`Ooops.. student record is not available at the moment`);
       }
 
-      await this.attachInvitations(result, accessToken);
-      const student = result[0];
-
-      // Get student sessions with courses
-      //   const sessions = await this.getStudentSessions(student_id, accessToken);
-
-      // Get student stats
-      //   const stats = await this.getStudentStats(student_id, accessToken);
-
-      return {
-        ...student,
-        // sessions,
-        // stats,
-      };
+      studentTuple[0].program_course_count = bignumber(studentTuple[0].program_course_count).toNumber();
+      return studentTuple[0];
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;
       }
-      this.logger.error(`Error fetching student ${student_id}: ${error.message}`, error.stack);
+      this.logger.error(`Error fetching student ${studentId}: ${error.message}`, error.stack);
       throw new InternalServerErrorException('Failed to fetch student');
     }
   }
@@ -415,7 +567,17 @@ export class StudentsService {
   async update(student_id: number, updateStudentDto: UpdateStudentDto, accessToken: string): Promise<Student> {
     try {
       // First verify student exists
-      await this.findOne(student_id, accessToken);
+      const supabase = await this.supabaseService.getClientWithAuth(accessToken);
+      await supabase
+        .from('students')
+        .select(
+          `
+            studuent_id
+          `,
+        )
+        .eq('student_id', student_id)
+        .limit(1)
+        .single();
 
       // If email is being updated, check if it's already in use
       if (updateStudentDto.email) {
@@ -691,23 +853,43 @@ export class StudentsService {
     }
   }
 
-  async getStudentSessions(student_id: number, accessToken: string) {
+  async getStudentSessions(student_id: number | string) {
     try {
       // Validate student_id
-      if (!student_id || student_id <= 0) {
+      if (!isNumeric(student_id)) {
         throw new BadRequestException('Invalid student ID');
       }
-      // Verify student exists
-      await this.findOne(student_id, accessToken);
 
-      const sessions = await this.fetchStudentSessions(student_id, accessToken);
+      const sessions = await this.sharedSessionService.prismaClient.$queryRaw<
+        Pick<
+          sessions,
+          'session_id' | 'session_name' | 'start_date' | 'end_date' | 'enrollment_deadline' | 'session_status'
+        >[]
+      >`
+        select
+          s.session_id,
+          s.session_name,
+          s.start_date,
+          s.end_date,
+          s.enrollment_deadline,
+          s.session_status
+        from
+          sessions s
+        inner join
+          session_students st
+          on (
+            s.session_id = st.session_id
+          )
+        where
+          st.student_id = ${student_id}
+      `;
 
       // Check if there are any sessions
-      if (!sessions || sessions.length === 0) {
+      if (!sessions) {
         throw new NotFoundException(`No sessions found for student ${student_id}`);
       }
 
-      return this.formatSessions(sessions, student_id);
+      return sessions;
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;
@@ -717,67 +899,64 @@ export class StudentsService {
     }
   }
 
-  private async fetchStudentSessions(student_id: number, accessToken: string): Promise<SessionResponse[]> {
-    const sessions = await this.supabaseService.select(accessToken, 'session_students', {
-      filter: { student_id },
-      columns: `
-          session:sessions(
-            session_id,
-            session_name,
-            start_date,
-            end_date,
-            enrollment_deadline,
-            session_status,
-            enrollments(
-              enrollment_id,
-              enrollment_status,
-              special_request,
-              rejection_reason,
-              student_id,
-              courses(
-                course_id,
-                course_title,
-                course_code,
-                course_credits,
-                course_type,
-                default_capacity,
-                course_desc
-              )
-            )
-          )
-        `,
-    });
+  async getStudentSessionCourses(session_id: number | string, student_id: number | string) {
+    try {
+      // Validate session_id
+      if (!isNumeric(session_id)) {
+        throw new BadRequestException('Invalid session ID');
+      }
 
-    if (!sessions || (Array.isArray(sessions) && sessions.some((item) => 'error' in item))) {
-      throw new InternalServerErrorException('Failed to fetch sessions');
+      // Validate student_id
+      if (!isNumeric(student_id)) {
+        throw new BadRequestException('Invalid student ID');
+      }
+
+      const courses = await this.courseService.getStudentCoursesInSessionsUsingId(student_id, [session_id]);
+
+      // Check if there are any sessions
+      if (!courses) {
+        throw new NotFoundException(`No courses found for student ${student_id} in session ${session_id}`);
+      }
+
+      return courses;
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error(
+        `Error fetching courses for student ${student_id} in session ${session_id}: ${error.message}`,
+        error.stack,
+      );
+      throw new InternalServerErrorException(
+        `Error fetching sessions for student ${student_id} in session ${session_id}: ${error.message}`,
+      );
     }
-
-    return sessions as unknown as SessionResponse[];
   }
 
-  private getStudentEnrollments(enrollments: SessionResponse['session']['enrollments'], student_id: number) {
-    return enrollments
-      .filter((enrollment) => enrollment.student_id === student_id)
-      .map((enrollment) => ({
-        enrollment_id: enrollment.enrollment_id,
-        enrollment_status: enrollment.enrollment_status as EnrollmentStatus,
-        special_request: enrollment.special_request,
-        rejection_reason: enrollment.rejection_reason,
-        ...enrollment.courses,
-        student_id: enrollment.student_id,
-      }));
-  }
+  async getStudentProgramCourses(student_id: number | string) {
+    try {
+      // Validate student_id
+      if (!isNumeric(student_id)) {
+        throw new BadRequestException('Invalid student ID');
+      }
 
-  private formatSessions(sessions: SessionResponse[], student_id: number) {
-    return sessions.map((item) => ({
-      session_id: item.session.session_id,
-      session_name: item.session.session_name,
-      start_date: new Date(item.session.start_date),
-      end_date: new Date(item.session.end_date),
-      enrollment_deadline: new Date(item.session.enrollment_deadline),
-      session_status: item.session.session_status,
-      enrollments: this.getStudentEnrollments(item.session.enrollments, student_id),
-    }));
+      const courses = await this.courseService.getStudentProgramCoursesUsingId(student_id);
+
+      // Check if there are any sessions
+      if (!courses) {
+        throw new NotFoundException(`No courses found for student ${student_id} program`);
+      }
+
+      return courses;
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error(`Error fetching courses for student ${student_id} program: ${error.message}`, error.stack);
+      throw new InternalServerErrorException(
+        `Error fetching sessions for student ${student_id} program: ${error.message}`,
+      );
+    }
   }
 
   async acceptStudentInvite(dto: AcceptStudentInviteDto, file?: MulterFile) {
