@@ -1,16 +1,18 @@
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import {
   Body,
   Controller,
   Delete,
   ForbiddenException,
   Get,
+  HttpStatus,
   Inject,
   Param,
   Patch,
   Post,
   Query,
   Req,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -20,6 +22,7 @@ import { UserType } from '@prisma/client';
 import { File as MulterFile } from 'multer';
 import { Public } from 'src/common/public.decorator';
 import { AuthGuard } from '../../../supabase/auth.guard';
+import { ClaimStudentDto } from '../dto/claim-student.dto';
 import { AcceptStudentInviteDto, InviteStudentDto } from '../dto/invite-student.dto';
 import { StudentsService } from '../services/students.service';
 
@@ -104,6 +107,28 @@ export class StudentsController {
   @Get(':id/program/courses')
   async getStudentProgramCourses(@Param('id') studentId: number | string) {
     return this.studentsService.getStudentProgramCourses(studentId);
+  }
+
+  @Post(':studentId/claim')
+  async claimStudent(
+    @Req() req: Request & { user: { role: Lowercase<UserType>; [key: string]: string } },
+    @Res() res: Response,
+    @Param('studentId') studentId: number | string,
+    @Body() body: ClaimStudentDto,
+  ) {
+    const role = String(req.user.role).toLowerCase();
+    if (!['admin', 'registrar'].includes(role)) {
+      throw new ForbiddenException('Only admins and registrars can view student list');
+    }
+
+    await this.studentsService.claimStudent({
+      studentId,
+      registrarId: role === 'registrar' ? req.user.registrar_id : body.registrar_id,
+      role: role as 'admin' | 'registrar',
+      roleId: role === 'admin' ? req.user.admin_id : req.user.registrar_id,
+    });
+
+    return res.status(HttpStatus.NO_CONTENT).send();
   }
 
   @Get(':id/stats')

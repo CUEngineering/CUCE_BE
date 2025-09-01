@@ -6,9 +6,18 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import { courses, PrismaClient, registrars, session_students, sessions, students } from '@prisma/client';
+import {
+  courses,
+  enrollments,
+  Prisma,
+  PrismaClient,
+  programs,
+  registrars,
+  session_courses,
+  sessions,
+  students,
+} from '@prisma/client';
 import isNumeric from 'fast-isnumeric';
-import { get } from 'lodash';
 import { SharedSessionService } from 'src/modules/shared/services/session.service';
 import { sendEmail } from 'src/utils/email.helper';
 import { SupabaseService } from '../../../supabase/supabase.service';
@@ -425,12 +434,12 @@ export class EnrollmentsService {
   }
 
   // SupaBase
-  async getEnrollmentListView(
-    accessToken: string,
-    currentUserId: number,
-    currentUserRole: string,
-    filters: Record<string, any> = {},
-  ): Promise<
+  async getEnrollmentListView(options: {
+    session_id?: string | number | undefined | null;
+    role: 'student' | 'admin' | 'registrar';
+    role_id: string | number;
+    assigned_to: 'none' | 'me' | 'others';
+  }): Promise<
     {
       enrollmentId: number;
       studentName: string;
@@ -440,7 +449,7 @@ export class EnrollmentsService {
       courseName: string;
       courseType: string;
       courseStatus: string;
-      courseCredit: string;
+      courseCredit: number;
       courseDescription: string;
       program: string;
       status: 'approved' | 'pending' | 'rejected';
@@ -448,44 +457,168 @@ export class EnrollmentsService {
       assignedRegistrarImage?: string;
       assignedStatus: 'unassigned' | 'toOthers' | 'toMe';
       sessionName: string;
-      sessionId: string;
-      courseId: string;
-      reason: string;
+      sessionId: number;
+      courseId: number;
+      reason: string | null;
       createdAt?: Date;
       updatedAt?: Date;
     }[]
   > {
-    currentUserRole = currentUserRole.toLowerCase();
-    const supabase = this.supabaseService.getClientWithAuth(accessToken);
-    const activeSessionIds = await this.sharedSessionService.getActiveSessionIds(supabase);
-    if (!isNumeric(filters.session_id)) {
-      filters.session_id = activeSessionIds[0] ? Number(activeSessionIds[0]) : undefined;
+    const activeSessionIds = await this.sharedSessionService.getActiveSessionIds();
+    const { role, role_id } = options;
+    const assignedTo = options.assigned_to || 'none';
+    let sessionId = options.session_id;
+
+    if (!isNumeric(sessionId)) {
+      sessionId = activeSessionIds[0];
     }
 
-    if (!isNumeric(filters.session_id)) {
-      throw new BadRequestException(`Selected session is invalid`);
+    if (role === 'registrar' && assignedTo === 'others') {
+      return [];
     }
 
-    filters[`students.session_students.session_id`] = {
-      eq: filters.session_id,
+    let registrarId: string = String(role === 'registrar' ? (role_id ?? '') : '');
+    if (role === 'admin') {
+      const adminRegistrarResp = await this.sharedSessionService.prismaClient.$queryRaw<
+        [
+          {
+            registrar_id: string | number;
+          },
+        ]
+      >`
+        select
+          r.registrar_id
+        from
+          admins a
+        inner join
+          registrars r
+          on (
+            a.email = r.email
+          )
+        where
+          a.admin_id = ${Number(role_id)}
+        limit 1
+      `;
+
+      if (!adminRegistrarResp.length) {
+        throw new BadRequestException(`Administrator doesn't have a registrar account`);
+      }
+
+      registrarId = String(adminRegistrarResp[0].registrar_id);
+    }
+
+    const prismaSql = Prisma.sql([
+      `
+        select
+          e.*,
+          to_jsonb(stu) as student,
+          to_jsonb(s) as session,
+          to_jsonb(c) as course,
+          to_jsonb(sc) as session_course,
+          to_jsonb(p) as program,
+          (
+            select
+              to_jsonb(r)
+            from
+              student_registrar_sessions srs
+            inner join
+              registrars r
+              on (
+                r.registrar_id = srs.registrar_id
+              )
+            where
+              srs.student_id = stu.student_id
+              and
+              srs.session_id = s.session_id
+          ) as registrar,
+          exists (
+            select
+              stus.session_id
+            from
+              session_students stus
+            where
+              stus.student_id = stu.student_id
+              and
+              stus.session_id = s.session_id
+          ) as is_student_in_session
+        from
+          enrollments e
+        inner join
+          students stu
+          on (
+            stu.student_id = e.student_id
+          )
+        inner join
+          programs p
+          on (
+            stu.program_id = p.program_id
+          )
+        inner join
+          sessions s
+          on (
+            s.session_id = e.session_id
+          )
+        inner join
+          courses c
+          on (
+            c.course_id = e.course_id
+          )
+        inner join
+          session_courses sc
+          on (
+            s.session_id = sc.session_id
+            and
+            c.course_id = sc.course_id
+          )
+        ${
+          role !== 'student'
+            ? `
+                ${assignedTo === 'none' ? 'left join' : 'inner join'}
+                  student_registrar_sessions srs
+                  on (
+                    srs.student_id = stu.student_id
+                    and
+                    srs.session_id = s.session_id
+                  )
+              `
+            : ''
+        }
+        where
+          ${
+            role === 'student'
+              ? `
+                  stu.student_id = ${role_id}
+                `
+              : assignedTo === 'none'
+                ? `
+                    srs.session_id is null
+                  `
+                : assignedTo === 'others'
+                  ? `
+                      srs.registrar_id <> ${registrarId}
+                    `
+                  : assignedTo === 'me'
+                    ? `
+                        srs.registrar_id = ${registrarId}
+                      `
+                    : 'e.student_id = 0'
+          }
+          and
+            s.session_id = ${sessionId}
+      `,
+    ]);
+
+    type EnrollmentRespType = enrollments & {
+      student: students;
+      session: sessions;
+      course: courses;
+      session_course: session_courses;
+      program: programs;
+      registrar?: registrars | null;
+      is_student_in_session: boolean;
     };
 
-    const enrollments = (await this.supabaseService.select(accessToken, 'enrollments', {
-      columns: `
-        *, 
-        students(
-          *, 
-          programs(*), 
-          session_students(*) 
-        ), 
-        courses(*), 
-        registrars(*), 
-        sessions(*), 
-        admins(*), 
-        session_course:session_id(*)
-      `,
-      filter: filters,
-    })) as unknown as Enrollment[];
+    const enrollments = await this.sharedSessionService.prismaClient.$queryRaw<EnrollmentRespType[]>(prismaSql);
 
     return enrollments.map((e) => {
       let status: 'approved' | 'pending' | 'rejected';
@@ -503,45 +636,51 @@ export class EnrollmentsService {
 
       // Compute assignedStatus
       let assignedStatus: 'unassigned' | 'toOthers' | 'toMe';
-      if (!e.registrar_id && !e.admin_id) {
-        assignedStatus = 'unassigned';
-      } else if (
-        (currentUserRole === 'registrar' && e.registrar_id === currentUserId) ||
-        (currentUserRole === 'admin' && e.admin_id === currentUserId)
-      ) {
-        assignedStatus = 'toMe';
-      } else {
-        assignedStatus = 'toOthers';
+      switch (assignedTo) {
+        case 'none': {
+          assignedStatus = 'unassigned';
+          break;
+        }
+
+        case 'others': {
+          assignedStatus = 'toOthers';
+          break;
+        }
+
+        case 'me':
+        default: {
+          assignedStatus = 'toMe';
+          break;
+        }
       }
 
-      const session = e.sessions as unknown as sessions;
+      const session = e.session;
       const sessionId = e.session_course.session_id ?? session.session_id;
       const isActiveSession = activeSessionIds.includes(String(sessionId));
       const enrollmentDeadline = session.enrollment_deadline;
 
-      const sessionStudents = get(e, `students.session_students`, []) as session_students[];
       return {
         enrollmentId: e.enrollment_id,
-        studentName: `${e.students?.first_name ?? ''} ${e.students?.last_name ?? ''}`.trim(),
-        studentId: e.students?.reg_number ?? '',
-        studentImage: e.students?.profile_picture ?? '',
-        courseCode: e.courses?.course_code ?? '',
-        courseCredit: e.courses?.course_credits ?? '',
-        courseName: e.courses?.course_title ?? '',
-        courseType: e.courses?.course_type ?? '',
-        courseDescription: e.courses?.course_desc ?? '',
+        studentName: `${e.student.first_name ?? ''} ${e.student.last_name ?? ''}`.trim(),
+        studentId: e.student.reg_number ?? '',
+        studentImage: e.student.profile_picture ?? '',
+        courseCode: e.course.course_code ?? '',
+        courseCredit: e.course.course_credits,
+        courseName: e.course.course_title ?? '',
+        courseType: e.course.course_type,
+        courseDescription: e.course.course_desc ?? '',
         sessionId,
         isActiveSession,
         enrollmentDeadline,
-        isStudentInSession: !!sessionStudents.length,
-        courseId: e.courses?.course_id ?? '',
-        courseStatus: e.session_course?.session_status ?? 'closed',
-        program: e.students?.programs?.program_name ?? '',
+        isStudentInSession: e.is_student_in_session,
+        courseId: e.course.course_id,
+        courseStatus: e.session_course.status,
+        program: e.program.program_name,
         status,
-        assignedRegistrar: `${e.registrars?.first_name ?? ''} ${e.registrars?.last_name ?? ''}`.trim(),
-        assignedRegistrarImage: e.registrars?.profile_picture ?? '',
+        assignedRegistrar: `${e.registrar?.first_name ?? ''} ${e.registrar?.last_name ?? ''}`.trim(),
+        assignedRegistrarImage: e.registrar?.profile_picture ?? '',
         assignedStatus,
-        sessionName: e.session_course?.session_name ?? '',
+        sessionName: session.session_name ?? '',
         reason: e.rejection_reason,
         createdAt: e.created_at,
         updatedAt: e.updated_at,
@@ -549,11 +688,44 @@ export class EnrollmentsService {
     });
   }
 
-  async update(
-    enrollment_id: number,
-    updateDto: UpdateEnrollmentDto,
-    accessToken: string,
-  ): Promise<{ success: boolean; message: string; enrollment: any }> {
+  async update(options: {
+    id: number | string;
+    data: UpdateEnrollmentDto;
+    role: 'admin' | 'registrar';
+    role_id: string | number;
+  }): Promise<{ success: boolean; message: string }> {
+    const { id: enrollment_id, data, role, role_id } = options;
+
+    let registrarId: string = String(role === 'registrar' ? (role_id ?? '') : '');
+    if (role === 'admin') {
+      const adminRegistrarResp = await this.sharedSessionService.prismaClient.$queryRaw<
+        [
+          {
+            registrar_id: string | number;
+          },
+        ]
+      >`
+        select
+          r.registrar_id
+        from
+          admins a
+        inner join
+          registrars r
+          on (
+            a.email = r.email
+          )
+        where
+          a.admin_id = ${Number(role_id)}
+        limit 1
+      `;
+
+      if (!adminRegistrarResp.length) {
+        throw new BadRequestException(`Administrator doesn't have a registrar account`);
+      }
+
+      registrarId = String(adminRegistrarResp[0].registrar_id);
+    }
+
     try {
       const enrollmentsList = await this.sharedSessionService.prismaClient.$queryRaw<
         [
@@ -670,22 +842,33 @@ export class EnrollmentsService {
       }
 
       const [enrollment] = enrollmentsList;
-      const updated = await this.supabaseService.update(
-        accessToken,
-        'enrollments',
-        { enrollment_id },
-        {
-          ...updateDto,
-          updated_at: new Date(),
-        },
-      );
+      const prismaSql = Prisma.sql([
+        `
+          update enrollments set
+            enrollment_status = '${data.enrollment_status}',
+            rejection_reason = ${data.enrollment_status === 'REJECTED' ? `'${data.rejection_reason}'` : `null`},
+            updated_at = now(),
+            ${
+              role === 'admin'
+                ? `
+                    admin_id = ${role_id},
+                  `
+                : ''
+            }
+            registrar_id = ${registrarId}
+          where
+            enrollment_id = ${enrollment_id}
+        `,
+      ]);
 
-      if (!updated || (updated as any[]).length === 0) {
+      const noOfRowsAffected = await this.sharedSessionService.prismaClient.$executeRaw(prismaSql);
+
+      if (!noOfRowsAffected) {
         throw new InternalServerErrorException('Failed to update enrollment');
       }
 
       // Send emails after acceptance or rejection
-      switch (updateDto.enrollment_status) {
+      switch (data.enrollment_status) {
         case 'APPROVED': {
           await sendEmail({
             to: enrollment.student.email,
@@ -707,7 +890,7 @@ export class EnrollmentsService {
             context: {
               courseName: `${enrollment.course.course_title} (${enrollment.course.course_code})`,
               session: `${enrollment.session.session_name}`,
-              rejectionReason: updateDto.rejection_reason,
+              rejectionReason: data.rejection_reason,
             },
           });
           break;
@@ -717,7 +900,6 @@ export class EnrollmentsService {
       return {
         success: true,
         message: `Enrollment with ID ${enrollment_id} updated successfully`,
-        enrollment: updated[0],
       };
     } catch (error) {
       if (error instanceof NotFoundException || error instanceof BadRequestException) {

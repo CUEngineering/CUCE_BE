@@ -1,15 +1,9 @@
-import type { EnrollmentStatus, invitations, programs, registrars, sessions, students } from '@prisma/client';
+import type { EnrollmentStatus, sessions } from '@prisma/client';
 import type { File as MulterFile } from 'multer';
 import type { Invitation } from 'src/modules/invitations/types/invitation.types';
 import type { AcceptStudentInviteDto, InviteStudentDto } from '../dto/invite-student.dto';
 import type { UpdateStudentDto } from '../dto/update-student.dto';
-import type {
-  SessionResponse,
-  Student,
-  StudentResponse,
-  StudentStats,
-  StudentWithRegistrar,
-} from '../types/student.types';
+import type { Student, StudentResponse, StudentStats, StudentWithRegistrar } from '../types/student.types';
 import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
@@ -270,6 +264,16 @@ export class StudentsService {
                   `
                 : `
                     when true then -- when session id sent is all
+                      exists (
+                        select
+                          1
+                        from 
+                          sessions s
+                        where
+                          s.session_status = 'ACTIVE'
+                        limit 1
+                      )
+                      and 
                       not exists (
                         select
                           1
@@ -482,6 +486,16 @@ export class StudentsService {
             end
           ) as registrar,
           (
+            exists (
+              select
+                1
+              from 
+                sessions s
+              where
+                s.session_status = 'ACTIVE'
+              limit 1
+            )
+            and 
             not exists (
               select
                 1
@@ -911,7 +925,7 @@ export class StudentsService {
         throw new BadRequestException('Invalid student ID');
       }
 
-      const courses = await this.courseService.getStudentCoursesInSessionsUsingId(student_id, [session_id]);
+      const courses = await this.courseService.getStudentCoursesInSessionsUsingId(student_id, [session_id], true);
 
       // Check if there are any sessions
       if (!courses) {
@@ -957,6 +971,85 @@ export class StudentsService {
         `Error fetching sessions for student ${student_id} program: ${error.message}`,
       );
     }
+  }
+
+  async claimStudent(options: {
+    studentId: number | string;
+    registrarId: string | number;
+    role: 'admin' | 'registrar';
+    roleId: string | number;
+  }) {
+    const { role, studentId } = options;
+    console.log('Claim optons ====> ', options);
+    const [student, registraResp] = await Promise.all([
+      this.findOne({
+        id: studentId,
+        role: 'registrar',
+        roleId: options.registrarId,
+      }),
+      this.sharedSessionService.prismaClient.$queryRaw<
+        [
+          {
+            registrar_id: string | number;
+            active_session_id: string | number | null;
+          } | null,
+        ]
+      >`
+        select 
+          r.registrar_id,
+          (
+            select 
+              s.session_id
+            from 
+              sessions s
+            where 
+              s.session_status = 'ACTIVE'
+            limit 1
+          ) as active_session_id
+        from 
+          registrars r
+        where 
+          r.registrar_id = ${Number(options.registrarId)}
+        limit 1
+      `,
+    ]);
+
+    console.log('Claim fetch results ====> ', {
+      student,
+      registraResp,
+    });
+
+    if (!student) {
+      throw new NotFoundException(`Selected student data is invalid`);
+    }
+
+    if (!registraResp.length) {
+      throw new BadRequestException(`Registrar data is invalid`);
+    }
+
+    const activeSessionId = registraResp[0]?.active_session_id;
+    if (!activeSessionId) {
+      throw new BadRequestException(`There is currently no active session`);
+    }
+
+    if (role === 'registrar' && !student.can_claim) {
+      throw new BadRequestException(`Selected student is already claimed for this academic session`);
+    }
+
+    const prismaSql = Prisma.sql([
+      `
+        insert into student_registrar_sessions (student_id, registrar_id, session_id, updated_at)
+        values (${studentId}, ${options.registrarId}, ${activeSessionId}, now())
+        on conflict (student_id, registrar_id, session_id) do update
+        set
+          registrar_id = EXCLUDED.registrar_id,
+          updated_at = now();
+      `,
+    ]);
+
+    const noOfRowsAffected = await this.sharedSessionService.prismaClient.$executeRaw(prismaSql);
+
+    return noOfRowsAffected;
   }
 
   async acceptStudentInvite(dto: AcceptStudentInviteDto, file?: MulterFile) {

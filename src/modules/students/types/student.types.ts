@@ -113,7 +113,6 @@ export type StudentWithRegistrar = Pick<
   | 'email'
   | 'profile_picture'
   | 'program_id'
-  | 'status'
   | 'created_at'
   | 'updated_at'
 > & {

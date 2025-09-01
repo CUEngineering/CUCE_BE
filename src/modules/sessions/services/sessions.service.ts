@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { PrismaClient } from '@prisma/client';
+import { equal } from 'mathjs';
 import { SharedSessionService } from 'src/modules/shared/services/session.service';
 import { SupabaseService } from '../../../supabase/supabase.service';
 import { EnrollmentsService } from '../../enrollments/services/enrollments.service';
@@ -187,7 +188,9 @@ export class SessionsService {
       }
 
       const adminSupabaseClient = this.sharedSessionService.adminSupabaseClient;
-      const activeSessionIds = await this.sharedSessionService.getActiveSessionIds(adminSupabaseClient);
+      const activeSessionIds = (await this.sharedSessionService.getActiveSessionIds(adminSupabaseClient)).filter(
+        (id) => !equal(id, 0),
+      );
 
       // Close any currently active sessions
       for await (const activeSessionId of activeSessionIds) {
