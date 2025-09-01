@@ -35,7 +35,8 @@ export class SharedSessionService {
     return this._prismaClient;
   }
 
-  public async getActiveSessionIds(supabase: SupabaseClient) {
+  public async getActiveSessionIds(supabase?: SupabaseClient) {
+    supabase = supabase ?? this.adminSupabaseClient;
     const { data: activeSessions, error: sessionError } = await supabase
       .from('sessions')
       .select(

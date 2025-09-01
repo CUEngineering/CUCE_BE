@@ -6,8 +6,9 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import { courses, PrismaClient, registrars, sessions, students } from '@prisma/client';
+import { courses, PrismaClient, registrars, session_students, sessions, students } from '@prisma/client';
 import isNumeric from 'fast-isnumeric';
+import { get } from 'lodash';
 import { SharedSessionService } from 'src/modules/shared/services/session.service';
 import { sendEmail } from 'src/utils/email.helper';
 import { SupabaseService } from '../../../supabase/supabase.service';
@@ -454,6 +455,7 @@ export class EnrollmentsService {
       updatedAt?: Date;
     }[]
   > {
+    currentUserRole = currentUserRole.toLowerCase();
     const supabase = this.supabaseService.getClientWithAuth(accessToken);
     const activeSessionIds = await this.sharedSessionService.getActiveSessionIds(supabase);
     if (!isNumeric(filters.session_id)) {
@@ -464,10 +466,18 @@ export class EnrollmentsService {
       throw new BadRequestException(`Selected session is invalid`);
     }
 
+    filters[`students.session_students.session_id`] = {
+      eq: filters.session_id,
+    };
+
     const enrollments = (await this.supabaseService.select(accessToken, 'enrollments', {
       columns: `
         *, 
-        students(*, programs(*)), 
+        students(
+          *, 
+          programs(*), 
+          session_students(*) 
+        ), 
         courses(*), 
         registrars(*), 
         sessions(*), 
@@ -504,7 +514,12 @@ export class EnrollmentsService {
         assignedStatus = 'toOthers';
       }
 
-      const sessionId = e.session_course.session_id ?? '';
+      const session = e.sessions as unknown as sessions;
+      const sessionId = e.session_course.session_id ?? session.session_id;
+      const isActiveSession = activeSessionIds.includes(String(sessionId));
+      const enrollmentDeadline = session.enrollment_deadline;
+
+      const sessionStudents = get(e, `students.session_students`, []) as session_students[];
       return {
         enrollmentId: e.enrollment_id,
         studentName: `${e.students?.first_name ?? ''} ${e.students?.last_name ?? ''}`.trim(),
@@ -516,7 +531,9 @@ export class EnrollmentsService {
         courseType: e.courses?.course_type ?? '',
         courseDescription: e.courses?.course_desc ?? '',
         sessionId,
-        isActiveSession: activeSessionIds.includes(String(sessionId)),
+        isActiveSession,
+        enrollmentDeadline,
+        isStudentInSession: !!sessionStudents.length,
         courseId: e.courses?.course_id ?? '',
         courseStatus: e.session_course?.session_status ?? 'closed',
         program: e.students?.programs?.program_name ?? '',

@@ -1,4 +1,4 @@
-import type { EnrollmentStatus, ProgramType } from '@prisma/client';
+import type { EnrollmentStatus, invitations, programs, ProgramType, registrars, students } from '@prisma/client';
 
 export interface Student {
   student_id: number;
@@ -104,28 +104,28 @@ export interface StudentResponse {
   student?: Student;
 }
 
-export interface StudentWithRegistrar {
-  student_id: number;
-  reg_number: string;
-  first_name?: string;
-  last_name?: string;
-  email: string;
-  profile_picture?: string;
-  program_id: number;
-  program: {
-    program_name: string;
-    program_type: string;
-    total_credits: number;
-  };
-  enrollments: {
-    enrollment_id: number;
-    registrar_id?: number;
-    registrars?: {
-      registrar_id: number;
-      first_name?: string;
-      last_name?: string;
-      email: string;
-      profile_picture?: string;
-    };
-  }[];
-}
+export type StudentWithRegistrar = Pick<
+  students,
+  | 'student_id'
+  | 'reg_number'
+  | 'first_name'
+  | 'last_name'
+  | 'email'
+  | 'profile_picture'
+  | 'program_id'
+  | 'status'
+  | 'created_at'
+  | 'updated_at'
+> & {
+  program: Pick<programs, 'program_id' | 'program_name' | 'program_type' | 'total_credits'>;
+  invitation?: null | Pick<
+    invitations,
+    'invitation_id' | 'email' | 'expires_at' | 'status' | 'user_type' | 'created_at' | 'updated_at'
+  >;
+  registrar?: null | Pick<
+    registrars,
+    'registrar_id' | 'first_name' | 'last_name' | 'email' | 'profile_picture' | 'is_deactivated' | 'is_suspended'
+  >;
+  can_claim: boolean;
+  program_course_count: number;
+};

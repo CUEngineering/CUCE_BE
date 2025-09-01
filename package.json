@@ -38,11 +38,13 @@
     "axios": "^1.9.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
+    "date-fns": "^4.1.0",
     "dotenv": "^16.4.7",
     "fast-isnumeric": "^1.1.4",
     "fs-extra": "^11.3.0",
     "handlebars": "^4.7.8",
     "lodash": "^4.17.21",
+    "mathjs": "^14.6.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "uuid": "^11.1.0"

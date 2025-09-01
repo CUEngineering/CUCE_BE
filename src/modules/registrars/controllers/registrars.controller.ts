@@ -1,3 +1,4 @@
+import type { File as MulterFile } from 'multer';
 import {
   Body,
   Controller,
@@ -14,7 +15,6 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Request } from 'express';
-import type { File as MulterFile } from 'multer';
 import { Public } from 'src/common/public.decorator';
 import { AuthGuard } from '../../../supabase/auth.guard';
 import { AcceptInviteDto } from '../dto/accept-registrar.dto';
@@ -41,10 +41,7 @@ export class RegistrarsController {
   }
 
   @Get(':id')
-  async findOne(
-    @Param('id') id: number,
-    @Req() req: Request & { accessToken: string },
-  ) {
+  async findOne(@Param('id') id: number, @Req() req: Request & { accessToken: string }) {
     return this.registrarsService.findOne(id, req.accessToken);
   }
 
@@ -54,36 +51,23 @@ export class RegistrarsController {
     @Body() updateRegistrarDto: UpdateRegistrarDto,
     @Req() req: Request & { accessToken: string },
   ) {
-    return this.registrarsService.update(
-      id,
-      updateRegistrarDto,
-      req.accessToken,
-    );
+    return this.registrarsService.update(id, updateRegistrarDto, req.accessToken);
   }
 
   @Patch(':id/deactivate')
   @HttpCode(HttpStatus.OK)
-  async deactivate(
-    @Param('id') id: number,
-    @Req() req: Request & { accessToken: string },
-  ) {
+  async deactivate(@Param('id') id: number, @Req() req: Request & { accessToken: string }) {
     return this.registrarsService.remove(id, req.accessToken);
   }
 
   @Post('invite')
-  async invite(
-    @Body() inviteDto: InviteRegistrarsDto,
-    @Req() req: Request & { accessToken: string },
-  ) {
+  async invite(@Body() inviteDto: InviteRegistrarsDto, @Req() req: Request & { accessToken: string }) {
     const results: InvitationResult[] = [];
 
     setImmediate(async () => {
       for (const email of inviteDto.emails) {
         try {
-          const invitation = await this.registrarsService.inviteRegistrar(
-            { email },
-            req.accessToken,
-          );
+          const invitation = await this.registrarsService.inviteRegistrar({ email }, req.accessToken);
           results.push({
             email,
             success: true,
@@ -107,58 +91,35 @@ export class RegistrarsController {
   }
 
   @Post('delete-invite')
-  async deleteInvite(
-    @Body('email') email: string,
-    @Req() req: Request & { accessToken: string },
-  ) {
-    return await this.registrarsService.deleteInvitation(
-      email,
-      req.accessToken,
-    );
+  async deleteInvite(@Body('email') email: string, @Req() req: Request & { accessToken: string }) {
+    return await this.registrarsService.deleteInvitation(email, req.accessToken);
   }
+
   @Post('resend-invite')
-  async resendInvite(
-    @Body('email') email: string,
-    @Req() req: Request & { accessToken: string },
-  ) {
-    const result = await this.registrarsService.resendInvitation(
-      email,
-      req.accessToken,
-    );
+  async resendInvite(@Body('email') email: string, @Req() req: Request & { accessToken: string }) {
+    const result = await this.registrarsService.resendInvitation(email, req.accessToken);
     return result;
   }
 
   @Patch(':id/suspend')
-  async suspendRegistrar(
-    @Param('id') id: number,
-    @Req() req: Request & { accessToken: string },
-  ) {
+  async suspendRegistrar(@Param('id') id: number, @Req() req: Request & { accessToken: string }) {
     return this.registrarsService.suspend(id, req.accessToken);
   }
 
   @Patch(':id/unsuspend')
-  async unsuspendRegistrar(
-    @Param('id') id: number,
-    @Req() req: Request & { accessToken: string },
-  ) {
+  async unsuspendRegistrar(@Param('id') id: number, @Req() req: Request & { accessToken: string }) {
     return this.registrarsService.liftSuspension(id, req.accessToken);
   }
 
   @Get(':id/stats')
-  async getRegistrarStats(
-    @Param('id') id: number,
-    @Req() req: Request & { accessToken: string },
-  ) {
+  async getRegistrarStats(@Param('id') id: number, @Req() req: Request & { accessToken: string }) {
     return this.registrarsService.getRegistrarStats(id, req.accessToken);
   }
 
   @Public()
   @Post('accept-invite')
   @UseInterceptors(FileInterceptor('profile_picture'))
-  async acceptInvite(
-    @Body() dto: AcceptInviteDto,
-    @UploadedFile() file?: MulterFile,
-  ) {
+  async acceptInvite(@Body() dto: AcceptInviteDto, @UploadedFile() file?: MulterFile) {
     return this.registrarsService.acceptInvite(dto, file);
   }
 }

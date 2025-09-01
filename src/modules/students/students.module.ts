@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
+import { PrismaClient } from '@prisma/client';
+import { SupabaseModule } from '../../supabase/supabase.module';
+import { CoursesModule } from '../courses/courses.module';
 import { StudentsController } from './controllers/students.controller';
 import { StudentsService } from './services/students.service';
-import { SupabaseModule } from '../../supabase/supabase.module';
-import { PrismaClient } from '@prisma/client';
 
 @Module({
-  imports: [SupabaseModule],
+  imports: [SupabaseModule, CoursesModule],
   controllers: [StudentsController],
   providers: [
     StudentsService,

@@ -3,29 +3,25 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Inject,
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { UserType } from '@prisma/client';
 import { File as MulterFile } from 'multer';
 import { Public } from 'src/common/public.decorator';
 import { AuthGuard } from '../../../supabase/auth.guard';
 import { AcceptStudentInviteDto, InviteStudentDto } from '../dto/invite-student.dto';
 import { StudentsService } from '../services/students.service';
-
-interface InvitationResult {
-  email: string;
-  success: boolean;
-  student?: any;
-  error?: string;
-}
 
 @Controller('students')
 @UseGuards(AuthGuard)
@@ -36,13 +32,40 @@ export class StudentsController {
   ) {}
 
   @Get()
-  async findAll(@Req() req: Request & { accessToken: string }) {
-    return this.studentsService.findAll(req.accessToken);
+  async findAll(
+    @Req() req: Request & { accessToken: string; user: { role: Lowercase<UserType>; [key: string]: string } },
+    @Query('assigned_to') assignedTo: 'all' | 'none' | 'me' | 'others',
+    @Query('session_id') sessionId?: string | number,
+  ) {
+    const role = String(req.user.role).toLowerCase();
+    if (!['admin', 'registrar'].includes(role)) {
+      throw new ForbiddenException('Only admins and registrars can view student list');
+    }
+
+    return this.studentsService.findAll({
+      accessToken: req.accessToken,
+      role: role as 'admin' | 'registrar',
+      roleId: role === 'admin' ? req.user.admin_id : req.user.registrar_id,
+      sessionId,
+      assignedTo: String(assignedTo || 'all').toLowerCase() as 'all' | 'none' | 'me' | 'others',
+    });
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: number, @Req() req: Request & { accessToken: string }) {
-    return this.studentsService.findOne(id, req.accessToken);
+  async findOne(
+    @Param('id') id: number,
+    @Req() req: Request & { user: { role: Lowercase<UserType>; [key: string]: string } },
+  ) {
+    const role = String(req.user.role).toLowerCase();
+    if (!['admin', 'registrar'].includes(role)) {
+      throw new ForbiddenException('Only admins and registrars can view student data');
+    }
+
+    return this.studentsService.findOne({
+      id,
+      role: role as 'admin' | 'registrar',
+      roleId: role === 'admin' ? req.user.admin_id : req.user.registrar_id,
+    });
   }
   // Update students
   //   @Patch(':id')
@@ -66,8 +89,21 @@ export class StudentsController {
   }
 
   @Get(':id/sessions')
-  async getStudentSessions(@Param('id') id: number, @Req() req: Request & { accessToken: string }) {
-    return this.studentsService.getStudentSessions(id, req.accessToken);
+  async getStudentSessions(@Param('id') id: number) {
+    return this.studentsService.getStudentSessions(id);
+  }
+
+  @Get(':id/session/:session_id/courses')
+  async getStudentSessionCourses(
+    @Param('id') studentId: number | string,
+    @Param('session_id') sessionId: number | string,
+  ) {
+    return this.studentsService.getStudentSessionCourses(sessionId, studentId);
+  }
+
+  @Get(':id/program/courses')
+  async getStudentProgramCourses(@Param('id') studentId: number | string) {
+    return this.studentsService.getStudentProgramCourses(studentId);
   }
 
   @Get(':id/stats')
