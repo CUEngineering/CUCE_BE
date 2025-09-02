@@ -16,7 +16,7 @@ model admins {
   profile_picture String?
   user_id         String   @unique @db.Uuid
   created_at      DateTime @default(now()) @db.Timestamp(6)
-  updated_at      DateTime @db.Timestamp(6)
+  updated_at      DateTime @default(now()) @db.Timestamp(6)
   is_suspended    Boolean  @default(false)
   is_deactivated  Boolean  @default(false)
    enrollments enrollments[]
@@ -32,7 +32,7 @@ model courses {
   default_capacity Int
   course_desc      String?
   created_at       DateTime          @default(now())
-  updated_at       DateTime
+  updated_at       DateTime          @default(now())
   enrollments      enrollments[]
   program_courses  program_courses[]
   session_courses  session_courses[]
@@ -50,7 +50,7 @@ model enrollments {
   registrar_id      Int?
   admin_id          Int? 
   created_at        DateTime         @default(now())
-  updated_at        DateTime
+  updated_at        DateTime         @default(now())
   courses           courses          @relation(fields: [course_id], references: [course_id])
   registrars        registrars?      @relation(fields: [registrar_id], references: [registrar_id])
   sessions          sessions         @relation(fields: [session_id], references: [session_id])
@@ -71,7 +71,7 @@ model invitations {
   student_id    Int?
   registrar_id  Int?
   created_at    DateTime         @default(now())
-  updated_at    DateTime
+  updated_at    DateTime         @default(now())
   registrars    registrars?      @relation(fields: [registrar_id], references: [registrar_id])
   students      students?        @relation(fields: [student_id], references: [student_id])
 
@@ -83,7 +83,7 @@ model program_courses {
   program_id Int
   course_id  Int
   created_at DateTime @default(now())
-  updated_at DateTime
+  updated_at DateTime @default(now())
   courses    courses  @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
   programs   programs @relation(fields: [program_id], references: [program_id], onDelete: Cascade)
 
@@ -97,7 +97,7 @@ model programs {
   program_type    ProgramType
   total_credits   Int
   created_at      DateTime          @default(now())
-  updated_at      DateTime
+  updated_at      DateTime          @default(now())
   program_courses program_courses[]
   students        students[]
 }
@@ -111,7 +111,7 @@ model registrars {
   profile_picture String?
   user_id         String        @unique @db.Uuid
   created_at      DateTime      @default(now())
-  updated_at      DateTime
+  updated_at      DateTime      @default(now())
   is_suspended    Boolean       @default(false)
   is_deactivated  Boolean       @default(false)
   enrollments     enrollments[]
@@ -126,7 +126,7 @@ model session_courses {
   status            CourseStatus @default(OPEN)
   adjusted_capacity Int
   created_at        DateTime     @default(now())
-  updated_at        DateTime
+  updated_at        DateTime     @default(now())
   courses           courses      @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
   sessions          sessions     @relation(fields: [session_id], references: [session_id], onDelete: Cascade)
 
@@ -138,7 +138,7 @@ model session_students {
   session_id Int
   student_id Int
   created_at DateTime @default(now())
-  updated_at DateTime
+  updated_at DateTime @default(now())
   sessions   sessions @relation(fields: [session_id], references: [session_id])
   students   students @relation(fields: [student_id], references: [student_id])
 
@@ -154,7 +154,7 @@ model sessions {
   enrollment_deadline DateTime
   session_status      SessionStatus
   created_at          DateTime           @default(now())
-  updated_at          DateTime           @updatedAt
+  updated_at          DateTime           @default(now())
   enrollments         enrollments[]
   session_courses     session_courses[]
   session_students    session_students[]
@@ -173,7 +173,7 @@ model students {
   user_id          String?            @unique @db.Uuid
   status           String             @default("ACTIVE")
   created_at       DateTime           @default(now())
-  updated_at       DateTime
+  updated_at       DateTime           @default(now())
   enrollments      enrollments[]
   invitations      invitations[]
   session_students session_students[]
@@ -187,7 +187,7 @@ model user_roles {
   user_id    String   @unique @db.Uuid
   role       UserType
   created_at DateTime @default(now())
-  updated_at DateTime
+  updated_at DateTime @default(now())
 }
 
 enum CourseStatus {
@@ -254,7 +254,7 @@ model student_registrar_sessions {
   registrar_id Int
   session_id Int
   created_at DateTime @default(now())
-  updated_at DateTime
+  updated_at DateTime @default(now())
   student   students @relation(fields: [student_id], references: [student_id])
   registrar   registrars @relation(fields: [registrar_id], references: [registrar_id])
   session   sessions @relation(fields: [session_id], references: [session_id])
