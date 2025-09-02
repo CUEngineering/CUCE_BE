@@ -1,10 +1,10 @@
 import type { EnrollmentStatus, sessions } from '@prisma/client';
 import type { File as MulterFile } from 'multer';
-import type { Invitation } from 'src/modules/invitations/types/invitation.types';
 import type { AcceptStudentInviteDto, InviteStudentDto } from '../dto/invite-student.dto';
 import type { UpdateStudentDto } from '../dto/update-student.dto';
 import type { Student, StudentResponse, StudentStats, StudentWithRegistrar } from '../types/student.types';
 import { randomUUID } from 'node:crypto';
+import * as process from 'node:process';
 import {
   BadRequestException,
   ConflictException,
@@ -16,17 +16,18 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { InvitationStatus, Prisma, UserType } from '@prisma/client';
 
+import { InvitationStatus, Prisma, UserType } from '@prisma/client';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import isNumeric from 'fast-isnumeric';
-import { orderBy, pick, set } from 'lodash';
+import { pick } from 'lodash';
 import { bignumber } from 'mathjs';
 import { CourseService } from 'src/modules/courses/services/course.service';
 import { RegistrarsService } from 'src/modules/registrars/services/registrars.service';
 import { SharedSessionService } from 'src/modules/shared/services/session.service';
 import { sendEmail } from 'src/utils/email.helper';
 import { encodeEmail } from 'src/utils/emailEncrypt';
+import { processPaginationInputOpts } from 'src/utils/general.helper';
 import { SupabaseService } from '../../../supabase/supabase.service';
 
 function safeUuidv4(): string {
@@ -69,55 +70,221 @@ export class StudentsService {
     });
   }
 
-  private async attachInvitations(students: { email: string }[], accessToken: string) {
-    const studentEmails = students.map((student) => student.email);
-    const studentInvitations = (await this.supabaseService.select(accessToken, 'invitations', {
-      columns: `
-          invitation_id,
-          email,
-          expires_at,
-          status,
-          user_type,
-          created_at,
-          updated_at
-        `,
-      filter: {
-        user_type: { eq: 'STUDENT' },
-        email: { in: studentEmails },
-      },
-      orderBy: {
-        column: 'expires_at',
-        ascending: true,
-      },
-    })) as unknown as Pick<
-      Invitation,
-      'invitation_id' | 'email' | 'expires_at' | 'status' | 'user_type' | 'created_at' | 'updated_at'
-    >[];
+  async findAllStudents(options: {
+    search?: string;
+    perPage?: string | number;
+    page?: string | number;
+  }): Promise<StudentWithRegistrar[]> {
+    const { search } = options;
+    const paginationInputOpts = processPaginationInputOpts(pick(options, ['perPage', 'page']));
 
-    students.forEach((student) => {
-      const studentEmail = student.email.toLowerCase();
-      const invitations = orderBy(
-        studentInvitations.filter((invitation) => studentEmail === invitation.email.toLowerCase()),
-        [(i) => String(i.invitation_id), (i) => new Date(i.expires_at).getTime()],
-        ['desc', 'desc'],
-      );
+    paginationInputOpts.perPage = 1000;
+    paginationInputOpts.limit = 1000;
+    paginationInputOpts.offset = 0;
+    paginationInputOpts.page = 1;
 
-      const mainInvitation = invitations[0];
+    try {
+      const sql = `
+        select
+          s.student_id,
+          s.reg_number,
+          s.first_name,
+          s.last_name,
+          s.email,
+          s.profile_picture,
+          s.program_id,
+          s.status,
+          s.created_at,
+          s.updated_at,
+          jsonb_build_object(
+            'program_id',
+            p.program_id,
+            'program_name',
+            p.program_name,
+            'program_type',
+            p.program_type,
+            'total_credits',
+            p.total_credits
+          ) as program,
+          (
+            select
+              jsonb_build_object(
+                'invitation_id',
+                i.invitation_id,
+                'email',
+                i.email,
+                'expires_at',
+                i.expires_at,
+                'status',
+                i.status,
+                'user_type',
+                i.user_type,
+                'created_at',
+                i.created_at,
+                'updated_at',
+                i.updated_at
+              )
+            from
+              invitations i
+            where
+              i.user_type = 'STUDENT'
+              and
+              i.email = s.email
+            order by
+              i.expires_at asc
+            limit 1
+          ) as invitation,
+          (
+            select
+              jsonb_build_object(
+                'registrar_id',
+                r.registrar_id,
+                'first_name',
+                r.first_name,
+                'last_name',
+                r.last_name,
+                'email',
+                r.email,
+                'profile_picture',
+                r.profile_picture,
+                'is_suspended',
+                r.is_suspended,
+                'is_deactivated',
+                r.is_deactivated
+              )
+            from
+              sessions se
+            inner join
+              student_registrar_sessions srs
+              on (
+                srs.session_id = se.session_id
+              )
+            inner join
+              students "is"
+              on (
+                "is"."student_id" = srs."student_id"
+              )
+            inner join
+              registrars r
+              on (
+                srs.registrar_id = r.registrar_id
+              )
+            where
+              se.session_status = 'ACTIVE'
+              and
+              "is"."student_id" = s."student_id"
+            limit 1
+          ) as registrar,
+          (
+            exists (
+              select
+                1
+              from 
+                sessions se
+              inner join
+                session_students st
+                on (
+                  se.session_id = st.session_id
+                )
+              where
+                se.session_status = 'ACTIVE'
+                and
+                st.student_id = s.student_id
+              limit 1
+            )
+            and 
+            not exists (
+              select
+                1
+              from
+                sessions se
+              inner join
+                student_registrar_sessions srs
+                on (
+                  srs.session_id = se.session_id
+                )
+              inner join
+                students "is"
+                on (
+                  "is"."student_id" = srs."student_id"
+                )
+              where
+                se.session_status = 'ACTIVE'
+                and
+                "is"."student_id" = s."student_id"
+              limit 1
+            )
+          ) as can_claim,
+          coalesce(
+            (
+              select
+                count(pc.course_id)
+              from
+                program_courses pc
+              where
+                pc.program_id = s.program_id
+              limit 1
+            ),
+            0
+          ) as program_course_count
+        from
+          students s
+        inner join
+          programs p
+          on (
+            p.program_id = s.program_id
+          )
+        where
+          s.student_id > 0
+        order by
+          s.updated_at desc,
+          s.created_at desc,
+          s.student_id desc
+        limit 
+          ${paginationInputOpts.limit}
+        offset
+          ${paginationInputOpts.offset}
+      `;
 
-      if (mainInvitation) {
-        set(student, 'invite', pick(mainInvitation, ['status', 'expires_at', 'created_at', 'updated_at']));
+      const prismaSql = Prisma.sql([sql]);
+      const students = await this.sharedSessionService.prismaClient.$queryRaw<StudentWithRegistrar[]>(prismaSql);
+
+      if (!students.length) {
+        this.logger.warn('No students found in the database');
+        return [];
       }
-    });
+
+      return students.map((s) => {
+        s.program_course_count = bignumber(s.program_course_count).toNumber();
+        return s;
+      });
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+
+      this.logger.error(`Error fetching all students: ${error.message}`, error.stack);
+      throw new InternalServerErrorException('Failed to fetch students');
+    }
   }
 
-  async findAll(options: {
+  async findAllSessionStudents(options: {
     accessToken: string;
     role: 'admin' | 'registrar';
     roleId: string | number;
     sessionId?: string | number;
     assignedTo: 'all' | 'none' | 'me' | 'others';
+    search?: string;
+    perPage?: string | number;
+    page?: string | number;
   }): Promise<StudentWithRegistrar[]> {
     const { accessToken, role, roleId, sessionId, assignedTo } = options;
+    const paginationInputOpts = processPaginationInputOpts(pick(options, ['perPage', 'page']));
+
+    paginationInputOpts.perPage = 1000;
+    paginationInputOpts.limit = 1000;
+    paginationInputOpts.offset = 0;
+    paginationInputOpts.page = 1;
 
     try {
       if (!accessToken) {
@@ -161,6 +328,12 @@ export class StudentsService {
       if (!registrarId) {
         throw new BadRequestException(`Registrar identifier is invalid`);
       }
+
+      console.log('Options used is ====> ', {
+        sessionId,
+        assignedTo,
+        registrarId,
+      });
 
       const sql = `
         select
@@ -236,67 +409,8 @@ export class StudentsService {
           ) as registrar,
           (
             case
-            ${
-              sessionId
-                ? `
-                    when ss.session_status = 'ACTIVE' then -- when session id sent is specific and the session is active
-                      not exists (
-                        select
-                          1
-                        from
-                          sessions iss
-                        inner join
-                          student_registrar_sessions isrs
-                          on (
-                            isrs.session_id = iss.session_id
-                          )
-                        inner join
-                          students "is"
-                          on (
-                            "is"."student_id" = isrs."student_id"
-                          )
-                        where
-                          iss.session_status = 'ACTIVE'
-                          and
-                          "is"."student_id" = s."student_id"
-                        limit 1
-                      )
-                  `
-                : `
-                    when true then -- when session id sent is all
-                      exists (
-                        select
-                          1
-                        from 
-                          sessions s
-                        where
-                          s.session_status = 'ACTIVE'
-                        limit 1
-                      )
-                      and 
-                      not exists (
-                        select
-                          1
-                        from
-                          sessions iss
-                        inner join
-                          student_registrar_sessions isrs
-                          on (
-                            isrs.session_id = iss.session_id
-                          )
-                        inner join
-                          students "is"
-                          on (
-                            "is"."student_id" = isrs."student_id"
-                          )
-                        where
-                          iss.session_status = 'ACTIVE'
-                          and
-                          "is"."student_id" = s."student_id"
-                        limit 1
-                      )
-                  `
-            }
+            when ss.session_status = 'ACTIVE' and r.registrar_id is null then
+              true
             else
               false
             end
@@ -320,21 +434,22 @@ export class StudentsService {
           on (
             p.program_id = s.program_id
           )
-        ${
-          sessionId
-            ? `
-                inner join
-                  sessions ss
-                  on (
-                    ss.session_id = ${sessionId}
-                  )
-              `
-            : ''
-        }
+        inner join
+          session_students sst
+          on (
+            s.student_id = sst.student_id
+          )
+        inner join
+          sessions ss
+          on (
+            ss.session_id = sst.session_id
+          )
         ${['me', 'others'].includes(assignedTo) ? `inner join` : `left join`}
           student_registrar_sessions srs
           on (
             srs.student_id = s.student_id
+            and
+            srs.session_id = ss.session_id
           )
         left join
           registrars r
@@ -342,6 +457,8 @@ export class StudentsService {
             srs.registrar_id = r.registrar_id
           )
         where
+          ss.session_id = ${sessionId}
+          and
           ${
             assignedTo === 'me'
               ? `srs.registrar_id = ${registrarId}`
@@ -351,36 +468,20 @@ export class StudentsService {
                   ? `srs.registrar_id <> ${registrarId}`
                   : 's.student_id > 0'
           }
-          ${
-            sessionId
-              ? `
-                  and (
-                    case
-                    when '${assignedTo}' = 'none' then
-                      srs.session_id is null
-                    when '${assignedTo}' = 'all' then
-                      true
-                    when '${assignedTo}' = 'me' then
-                      srs.session_id = ${sessionId}
-                      and
-                      srs.registrar_id = ${registrarId}
-                    when '${assignedTo}' = 'others' then
-                      srs.session_id = ${sessionId}
-                      and
-                      srs.registrar_id = ${registrarId}
-                    else
-                      true
-                    end
-                  )
-                `
-              : ''
-          }
         group by
           s.student_id,
           p.program_id,
-          ${sessionId ? 'ss.session_id,' : ''}
+          ss.session_id,
           srs.student_id,
           r.registrar_id
+        order by
+          s.updated_at desc,
+          s.created_at desc,
+          s.student_id desc
+        limit 
+          ${paginationInputOpts.limit}
+        offset
+          ${paginationInputOpts.offset}
       `;
 
       const prismaSql = Prisma.sql([sql]);
@@ -464,9 +565,7 @@ export class StudentsService {
             limit 1
           ) as invitation,
           (
-            case
-              when srs.student_id is null then null
-            else
+            select
               jsonb_build_object(
                 'registrar_id',
                 r.registrar_id,
@@ -483,16 +582,44 @@ export class StudentsService {
                 'is_deactivated',
                 r.is_deactivated
               )
-            end
+            from
+              sessions se
+            inner join
+              student_registrar_sessions srs
+              on (
+                srs.session_id = se.session_id
+              )
+            inner join
+              students "is"
+              on (
+                "is"."student_id" = srs."student_id"
+              )
+            inner join
+              registrars r
+              on (
+                srs.registrar_id = r.registrar_id
+              )
+            where
+              se.session_status = 'ACTIVE'
+              and
+              "is"."student_id" = s."student_id"
+            limit 1
           ) as registrar,
           (
             exists (
               select
                 1
               from 
-                sessions s
+                sessions se
+              inner join
+                session_students st
+                on (
+                  se.session_id = st.session_id
+                )
               where
-                s.session_status = 'ACTIVE'
+                se.session_status = 'ACTIVE'
+                and
+                st.student_id = s.student_id
               limit 1
             )
             and 
@@ -500,19 +627,19 @@ export class StudentsService {
               select
                 1
               from
-                sessions iss
+                sessions se
               inner join
-                student_registrar_sessions isrs
+                student_registrar_sessions srs
                 on (
-                  isrs.session_id = iss.session_id
+                  srs.session_id = se.session_id
                 )
               inner join
                 students "is"
                 on (
-                  "is"."student_id" = isrs."student_id"
+                  "is"."student_id" = srs."student_id"
                 )
               where
-                iss.session_status = 'ACTIVE'
+                se.session_status = 'ACTIVE'
                 and
                 "is"."student_id" = s."student_id"
               limit 1
@@ -536,23 +663,6 @@ export class StudentsService {
           programs p
           on (
             p.program_id = s.program_id
-          )
-        left join
-          student_registrar_sessions srs
-          on (
-            srs.student_id = s.student_id
-          )
-        left join
-          sessions ss
-          on (
-            srs.session_id = ss.session_id
-            and
-            ss.session_status = 'ACTIVE'
-          )
-        left join
-          registrars r
-          on (
-            srs.registrar_id = r.registrar_id
           )
         where
           s.student_id = ${studentId}
