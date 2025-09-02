@@ -1,34 +1,27 @@
+import type { File as MulterFile } from 'multer';
+import { randomUUID } from 'node:crypto';
+import * as process from 'node:process';
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   InternalServerErrorException,
   Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { randomUUID } from 'crypto';
-import type { File as MulterFile } from 'multer';
-import { SupabaseService } from '../../../supabase/supabase.service';
-import { UpdateRegistrarDto } from '../dto/update-registrar.dto';
-import {
-  Invitation,
-  InvitationResponse,
-} from '../interfaces/invitation.interface';
-import {
-  Enrollment,
-  Registrar,
-  RegistrarResponse,
-  RegistrarStats,
-} from '../types/registrar.types';
-
-import { Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaClient } from '@prisma/client';
+
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { sendEmail } from 'src/utils/email.helper';
 import { encodeEmail } from 'src/utils/emailEncrypt';
+import { SupabaseService } from '../../../supabase/supabase.service';
 import { AcceptInviteDto } from '../dto/accept-registrar.dto';
+import { UpdateRegistrarDto } from '../dto/update-registrar.dto';
+import { Invitation, InvitationResponse } from '../interfaces/invitation.interface';
+import { Enrollment, Registrar, RegistrarResponse, RegistrarStats } from '../types/registrar.types';
 
 function safeUuidv4(): string {
   try {
@@ -56,9 +49,7 @@ export class RegistrarsService {
   ) {
     // Initialize admin client with service role key
     const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
-    const supabaseServiceKey = this.configService.get<string>(
-      'SUPABASE_SERVICE_ROLE_KEY',
-    );
+    const supabaseServiceKey = this.configService.get<string>('SUPABASE_SERVICE_ROLE_KEY');
 
     if (!supabaseUrl || !supabaseServiceKey) {
       throw new Error('Supabase URL and Service Role Key must be provided');
@@ -73,19 +64,12 @@ export class RegistrarsService {
   }
 
   async findAll(accessToken: string): Promise<Registrar[]> {
-    const result = (await this.supabaseService.select(
-      accessToken,
-      'registrars',
-      {},
-    )) as unknown as Registrar[];
+    const result = (await this.supabaseService.select(accessToken, 'registrars', {})) as unknown as Registrar[];
 
     // Get stats for each registrar
     const registrarsWithStats = await Promise.all(
       result.map(async (registrar) => {
-        const stats = await this.getRegistrarStats(
-          registrar.registrar_id,
-          accessToken,
-        );
+        const stats = await this.getRegistrarStats(registrar.registrar_id, accessToken);
         return {
           ...registrar,
           stats,
@@ -97,28 +81,18 @@ export class RegistrarsService {
   }
 
   async findOne(registrar_id: number, accessToken: string): Promise<Registrar> {
-    const result = (await this.supabaseService.select(
-      accessToken,
-      'registrars',
-      {
-        filter: { registrar_id },
-      },
-    )) as unknown as Registrar[];
+    const result = (await this.supabaseService.select(accessToken, 'registrars', {
+      filter: { registrar_id },
+    })) as unknown as Registrar[];
 
     if (!result || result.length === 0) {
-      throw new NotFoundException(
-        `Registrar with ID ${registrar_id} not found`,
-      );
+      throw new NotFoundException(`Registrar with ID ${registrar_id} not found`);
     }
 
     return result[0];
   }
 
-  async update(
-    registrar_id: number,
-    updateRegistrarDto: UpdateRegistrarDto,
-    accessToken: string,
-  ): Promise<Registrar> {
+  async update(registrar_id: number, updateRegistrarDto: UpdateRegistrarDto, accessToken: string): Promise<Registrar> {
     const result = (await this.supabaseService.update(
       accessToken,
       'registrars',
@@ -127,18 +101,13 @@ export class RegistrarsService {
     )) as unknown as Registrar[];
 
     if (!result || result.length === 0) {
-      throw new NotFoundException(
-        `Registrar with ID ${registrar_id} not found`,
-      );
+      throw new NotFoundException(`Registrar with ID ${registrar_id} not found`);
     }
 
     return result[0];
   }
 
-  async remove(
-    registrar_id: number,
-    accessToken: string,
-  ): Promise<RegistrarResponse> {
+  async remove(registrar_id: number, accessToken: string): Promise<RegistrarResponse> {
     try {
       // First check if registrar exists and current state
       const registrar = await this.findOne(registrar_id, accessToken);
@@ -157,9 +126,7 @@ export class RegistrarsService {
       )) as unknown as Registrar[];
 
       if (!result || result.length === 0) {
-        throw new NotFoundException(
-          `Registrar with ID ${registrar_id} not found`,
-        );
+        throw new NotFoundException(`Registrar with ID ${registrar_id} not found`);
       }
 
       return {
@@ -169,64 +136,45 @@ export class RegistrarsService {
       };
     } catch (error) {
       // Rethrow known NestJS exceptions
-      if (
-        error instanceof NotFoundException ||
-        error instanceof BadRequestException
-      ) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
         throw error;
       }
 
       // Log unexpected errors
-      this.logger.error(
-        `Error deactivating registrar ${registrar_id}: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Error deactivating registrar ${registrar_id}: ${error.message}`, error.stack);
 
       // Handle unexpected errors
       throw new InternalServerErrorException('Failed to deactivate registrar');
     }
   }
 
-  async inviteRegistrar(
-    inviteDto: EmailDto,
-    accessToken: string,
-  ): Promise<InvitationResponse> {
+  async inviteRegistrar(inviteDto: EmailDto, accessToken: string): Promise<InvitationResponse> {
     const { email } = inviteDto;
 
     // Check if invitation already exists for this email with PENDING status
-    const existingInvitation = (await this.supabaseService.select(
-      accessToken,
-      'invitations',
-      {
-        filter: {
-          email,
-          status: 'PENDING',
-        },
+    const existingInvitation = (await this.supabaseService.select(accessToken, 'invitations', {
+      filter: {
+        email,
+        status: 'PENDING',
       },
-    )) as unknown as Invitation[];
+    })) as unknown as Invitation[];
 
     if (existingInvitation && existingInvitation.length > 0) {
-      throw new BadRequestException(
-        `An invitation for ${email} already exists and is pending`,
-      );
+      throw new BadRequestException(`An invitation for ${email} already exists and is pending`);
     }
 
     // Generate safe UUIDs
     const token = safeUuidv4();
 
     // Create new invitation
-    const invitation = (await this.supabaseService.insert(
-      accessToken,
-      'invitations',
-      {
-        email,
-        token,
-        user_type: 'REGISTRAR',
-        status: 'PENDING',
-        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-        updated_at: new Date().toISOString(),
-      },
-    )) as unknown as Invitation[];
+    const invitation = (await this.supabaseService.insert(accessToken, 'invitations', {
+      email,
+      token,
+      user_type: 'REGISTRAR',
+      status: 'PENDING',
+      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      updated_at: new Date().toISOString(),
+    })) as unknown as Invitation[];
     const encodedEmail = encodeURIComponent(encodeEmail(email));
     const link = `${process.env.APP_BASE_URL}/accept-invite?token=${token}&email=${encodedEmail}`;
     await sendEmail({
@@ -236,7 +184,7 @@ export class RegistrarsService {
       context: {
         email,
         token,
-        link: link,
+        link,
       },
     });
 
@@ -247,10 +195,7 @@ export class RegistrarsService {
     };
   }
 
-  async suspend(
-    registrar_id: number,
-    accessToken: string,
-  ): Promise<RegistrarResponse> {
+  async suspend(registrar_id: number, accessToken: string): Promise<RegistrarResponse> {
     try {
       // First check if registrar exists and current state
       const registrar = await this.findOne(registrar_id, accessToken);
@@ -269,9 +214,7 @@ export class RegistrarsService {
       )) as unknown as Registrar[];
 
       if (!result || result.length === 0) {
-        throw new NotFoundException(
-          `Registrar with ID ${registrar_id} not found`,
-        );
+        throw new NotFoundException(`Registrar with ID ${registrar_id} not found`);
       }
 
       return {
@@ -281,30 +224,19 @@ export class RegistrarsService {
       };
     } catch (error) {
       // Rethrow known NestJS exceptions
-      if (
-        error instanceof NotFoundException ||
-        error instanceof BadRequestException
-      ) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
         throw error;
       }
 
       // Log unexpected errors
-      this.logger.error(
-        `Error suspending registrar ${registrar_id}: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Error suspending registrar ${registrar_id}: ${error.message}`, error.stack);
 
       // Handle unexpected errors
-      throw new InternalServerErrorException(
-        `Failed to suspend registrar: ${error}`,
-      );
+      throw new InternalServerErrorException(`Failed to suspend registrar: ${error}`);
     }
   }
 
-  async liftSuspension(
-    registrar_id: number,
-    accessToken: string,
-  ): Promise<RegistrarResponse> {
+  async liftSuspension(registrar_id: number, accessToken: string): Promise<RegistrarResponse> {
     try {
       // First check if registrar exists and current state
       const registrar = await this.findOne(registrar_id, accessToken);
@@ -323,9 +255,7 @@ export class RegistrarsService {
       )) as unknown as Registrar[];
 
       if (!result || result.length === 0) {
-        throw new NotFoundException(
-          `Registrar with ID ${registrar_id} not found`,
-        );
+        throw new NotFoundException(`Registrar with ID ${registrar_id} not found`);
       }
 
       return {
@@ -335,64 +265,39 @@ export class RegistrarsService {
       };
     } catch (error) {
       // Rethrow known NestJS exceptions
-      if (
-        error instanceof NotFoundException ||
-        error instanceof BadRequestException
-      ) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
         throw error;
       }
 
       // Log unexpected errors
-      this.logger.error(
-        `Error lifting suspension for registrar ${registrar_id}: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Error lifting suspension for registrar ${registrar_id}: ${error.message}`, error.stack);
 
       // Handle unexpected errors
-      throw new InternalServerErrorException(
-        'Failed to lift registrar suspension',
-      );
+      throw new InternalServerErrorException('Failed to lift registrar suspension');
     }
   }
 
-  async getRegistrarStats(
-    registrar_id: number,
-    accessToken: string,
-  ): Promise<RegistrarStats> {
+  async getRegistrarStats(registrar_id: number, accessToken: string): Promise<RegistrarStats> {
     // Verify registrar exists
     await this.findOne(registrar_id, accessToken);
 
     // Get all enrollments for this registrar
-    const enrollments = (await this.supabaseService.select(
-      accessToken,
-      'enrollments',
-      {
-        filter: { registrar_id },
-      },
-    )) as unknown as Enrollment[];
+    const enrollments = (await this.supabaseService.select(accessToken, 'enrollments', {
+      filter: { registrar_id },
+    })) as unknown as Enrollment[];
 
     // Get unique sessions
     const uniqueSessions = [...new Set(enrollments.map((e) => e.session_id))];
 
-    const activeEnrollments = enrollments.filter(
-      (e) => e.enrollment_status === 'ACTIVE',
-    );
+    const activeEnrollments = enrollments.filter((e) => e.enrollment_status === 'ACTIVE');
 
-    const completedEnrollments = enrollments.filter(
-      (e) => e.enrollment_status === 'COMPLETED',
-    );
+    const completedEnrollments = enrollments.filter((e) => e.enrollment_status === 'COMPLETED');
 
-    const approvedEnrollments = enrollments.filter(
-      (e) => e.enrollment_status === 'APPROVED',
-    );
+    const approvedEnrollments = enrollments.filter((e) => e.enrollment_status === 'APPROVED');
 
-    const rejectedEnrollments = enrollments.filter(
-      (e) => e.enrollment_status === 'REJECTED',
-    );
+    const rejectedEnrollments = enrollments.filter((e) => e.enrollment_status === 'REJECTED');
 
-    const cancelledEnrollments = enrollments.filter(
-      (e) => e.enrollment_status === 'CANCELLED',
-    );
+    const cancelledEnrollments = enrollments.filter((e) => e.enrollment_status === 'CANCELLED');
 
     return {
       totalSessions: uniqueSessions.length,
@@ -405,26 +310,17 @@ export class RegistrarsService {
     };
   }
 
-  async resendInvitation(
-    email: string,
-    accessToken: string,
-  ): Promise<InvitationResponse> {
-    const invitations = (await this.supabaseService.select(
-      accessToken,
-      'invitations',
-      {
-        filter: {
-          email,
-          status: 'PENDING',
-        },
+  async resendInvitation(email: string, accessToken: string): Promise<InvitationResponse> {
+    const invitations = (await this.supabaseService.select(accessToken, 'invitations', {
+      filter: {
+        email,
+        status: 'PENDING',
       },
-    )) as unknown as Invitation[];
+    })) as unknown as Invitation[];
 
     if (!invitations.length) {
       throw new NotFoundException(`No pending invitation found for ${email}`);
     }
-
-    const invitation = invitations[0];
 
     const token = safeUuidv4();
     const updatedInvitation = (await this.supabaseService.update(
@@ -436,6 +332,7 @@ export class RegistrarsService {
       },
       { email, status: 'PENDING' },
     )) as unknown as Invitation[];
+
     const encodedEmail = encodeURIComponent(encodeEmail(email));
     const link = `${process.env.APP_BASE_URL}/accept-invite?token=${token}&email=${encodedEmail}`;
 
@@ -446,7 +343,7 @@ export class RegistrarsService {
       context: {
         email,
         token,
-        link: link,
+        link,
       },
     });
 
@@ -457,20 +354,13 @@ export class RegistrarsService {
     };
   }
 
-  async deleteInvitation(
-    email: string,
-    accessToken: string,
-  ): Promise<{ success: boolean; message: string }> {
-    const invitations = (await this.supabaseService.select(
-      accessToken,
-      'invitations',
-      {
-        filter: {
-          email,
-          status: 'PENDING',
-        },
+  async deleteInvitation(email: string, accessToken: string): Promise<{ success: boolean; message: string }> {
+    const invitations = (await this.supabaseService.select(accessToken, 'invitations', {
+      filter: {
+        email,
+        status: 'PENDING',
       },
-    )) as unknown as Invitation[];
+    })) as unknown as Invitation[];
 
     if (!invitations.length) {
       throw new NotFoundException(`No pending invitation found for ${email}`);
@@ -491,22 +381,19 @@ export class RegistrarsService {
     const { email, password, first_name, last_name, token } = dto;
 
     try {
-      const { data: invitation, error: invitationError } =
-        await this.adminClient
-          .from('invitations')
-          .select('*')
-          .eq('email', email)
-          .eq('token', token)
-          .eq('status', 'PENDING')
-          .single();
+      const { data: invitation, error: invitationError } = await this.adminClient
+        .from('invitations')
+        .select('*')
+        .eq('email', email)
+        .eq('token', token)
+        .eq('status', 'PENDING')
+        .single();
 
       if (invitationError || !invitation) {
         throw new UnauthorizedException('Invalid or expired invitation');
       }
       const invitationDate = new Date(invitation.created_at);
-      const expiryDate = new Date(
-        invitationDate.getTime() + 7 * 24 * 60 * 60 * 1000,
-      );
+      const expiryDate = new Date(invitationDate.getTime() + 7 * 24 * 60 * 60 * 1000);
       if (new Date() > expiryDate) {
         throw new UnauthorizedException('Invitation has expired');
       }
@@ -520,24 +407,21 @@ export class RegistrarsService {
       if (existingRegistrar) {
         throw new ConflictException('Registrar with this email already exists');
       }
-      const { data: authData, error: authError } =
-        await this.supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              email_confirmed: true,
-            },
+      const { data: authData, error: authError } = await this.supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            email_confirmed: true,
           },
-        });
+        },
+      });
 
       if (authError) {
         if (authError.message.includes('already in use')) {
           throw new ConflictException('Email is already registered');
         }
-        throw new InternalServerErrorException(
-          `Auth user creation failed: ${authError.message}`,
-        );
+        throw new InternalServerErrorException(`Auth user creation failed: ${authError.message}`);
       }
 
       if (!authData.user) {
@@ -553,9 +437,9 @@ export class RegistrarsService {
       const { data: registrar, error: registrarError } = await this.adminClient
         .from('registrars')
         .insert({
-          first_name: first_name,
-          last_name: last_name,
-          email: email,
+          first_name,
+          last_name,
+          email,
           profile_picture: profileUrl || null,
           user_id: userId,
           updated_at: new Date().toISOString(),
@@ -565,27 +449,18 @@ export class RegistrarsService {
 
       if (registrarError) {
         await this.supabase.auth.admin.deleteUser(userId);
-        throw new InternalServerErrorException(
-          `Registrar creation failed: ${registrarError.message}`,
-        );
+        throw new InternalServerErrorException(`Registrar creation failed: ${registrarError.message}`);
       }
 
-      const { error: roleError } = await this.adminClient
-        .from('user_roles')
-        .insert({
-          user_id: userId,
-          role: 'REGISTRAR',
-          updated_at: new Date(),
-        });
+      const { error: roleError } = await this.adminClient.from('user_roles').insert({
+        user_id: userId,
+        role: 'REGISTRAR',
+        updated_at: new Date(),
+      });
       if (roleError) {
-        await this.adminClient
-          .from('registrars')
-          .delete()
-          .eq('user_id', userId);
+        await this.adminClient.from('registrars').delete().eq('user_id', userId);
         await this.supabase.auth.admin.deleteUser(userId);
-        throw new InternalServerErrorException(
-          `User role creation failed: ${roleError.message}`,
-        );
+        throw new InternalServerErrorException(`User role creation failed: ${roleError.message}`);
       }
       const { error: updateInvitationError } = await this.adminClient
         .from('invitations')
@@ -595,10 +470,7 @@ export class RegistrarsService {
         .eq('invitation_id', invitation.invitation_id);
 
       if (updateInvitationError) {
-        console.error(
-          'Failed to update invitation status:',
-          updateInvitationError,
-        );
+        console.error('Failed to update invitation status:', updateInvitationError);
       }
       return {
         user: {

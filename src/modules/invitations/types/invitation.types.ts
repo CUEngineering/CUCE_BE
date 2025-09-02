@@ -1,4 +1,4 @@
-import { InvitationStatus } from '@prisma/client';
+import type { InvitationStatus } from '@prisma/client';
 
 export interface Invitation {
   invitation_id: number;

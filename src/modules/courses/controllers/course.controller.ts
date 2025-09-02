@@ -1,15 +1,4 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  ParseIntPipe,
-  Patch,
-  Post,
-  Req,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { AuthGuard } from '../../../supabase/auth.guard';
 import { CreateCourseDto } from '../dto/create-course.dto';
@@ -23,10 +12,7 @@ export class CourseController {
   constructor(private readonly courseService: CourseService) {}
 
   @Post()
-  async create(
-    @Body() createCourseDto: CreateCourseDto,
-    @Req() req: Request & { accessToken: string },
-  ) {
+  async create(@Body() createCourseDto: CreateCourseDto, @Req() req: Request & { accessToken: string }) {
     return this.courseService.create(createCourseDto, req.accessToken);
   }
 
@@ -36,10 +22,7 @@ export class CourseController {
   }
 
   @Get(':id')
-  async findOne(
-    @Param('id') id: string,
-    @Req() req: Request & { accessToken: string },
-  ) {
+  async findOne(@Param('id') id: string, @Req() req: Request & { accessToken: string }) {
     return this.courseService.findOne(id, req.accessToken);
   }
 
@@ -53,26 +36,17 @@ export class CourseController {
   }
 
   @Delete(':id')
-  async delete(
-    @Param('id') id: string,
-    @Req() req: Request & { accessToken: string },
-  ) {
+  async delete(@Param('id') id: string, @Req() req: Request & { accessToken: string }) {
     return this.courseService.delete(id, req.accessToken);
   }
 
   @Get(':id/programs')
-  async getAffiliatedPrograms(
-    @Param('id') id: string,
-    @Req() req: Request & { accessToken: string },
-  ) {
+  async getAffiliatedPrograms(@Param('id') id: string, @Req() req: Request & { accessToken: string }) {
     return this.courseService.getAffiliatedPrograms(id, req.accessToken);
   }
 
   @Get(':id/sessions')
-  async getAffiliatedSessions(
-    @Param('id') id: string,
-    @Req() req: Request & { accessToken: string },
-  ) {
+  async getAffiliatedSessions(@Param('id') id: string, @Req() req: Request & { accessToken: string }) {
     return this.courseService.getAffiliatedSessions(id, req.accessToken);
   }
 
@@ -90,5 +64,13 @@ export class CourseController {
     @Req() req: Request & { accessToken: string },
   ) {
     return this.courseService.getEligibleCourses(req.accessToken, studentId);
+  }
+
+  @Get('program/:studentId')
+  async getStudentProgramCourses(
+    @Param('studentId', ParseIntPipe) studentId: number,
+    @Req() req: Request & { accessToken: string },
+  ) {
+    return this.courseService.getStudentProgramCourses(req.accessToken, studentId);
   }
 }

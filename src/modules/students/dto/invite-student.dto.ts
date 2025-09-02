@@ -1,4 +1,4 @@
-import { IsEmail, IsNotEmpty, IsNumber, IsString } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsNumber, IsString, IsUUID } from 'class-validator';
 
 export class InviteStudentDto {
   @IsString()
@@ -13,8 +13,6 @@ export class InviteStudentDto {
   @IsNotEmpty()
   program_id: number;
 }
-
-import { IsUUID } from 'class-validator';
 
 export class AcceptStudentInviteDto {
   @IsEmail()

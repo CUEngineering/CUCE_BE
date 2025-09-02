@@ -116,6 +116,7 @@ model registrars {
   is_deactivated  Boolean       @default(false)
   enrollments     enrollments[]
   invitations     invitations[]
+  student_registrar_sessions student_registrar_sessions[]
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -157,6 +158,7 @@ model sessions {
   enrollments         enrollments[]
   session_courses     session_courses[]
   session_students    session_students[]
+  student_registrar_sessions student_registrar_sessions[]
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -176,6 +178,7 @@ model students {
   invitations      invitations[]
   session_students session_students[]
   programs         programs           @relation(fields: [program_id], references: [program_id])
+  student_registrar_sessions student_registrar_sessions[]
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -245,4 +248,16 @@ model PasswordReset {
   @@map("password_resets")
 }
 
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model student_registrar_sessions {
+  student_id Int
+  registrar_id Int
+  session_id Int
+  created_at DateTime @default(now())
+  updated_at DateTime
+  student   students @relation(fields: [student_id], references: [student_id])
+  registrar   registrars @relation(fields: [registrar_id], references: [registrar_id])
+  session   sessions @relation(fields: [session_id], references: [session_id])
 
+  @@id([student_id, registrar_id, session_id])
+}

@@ -14,11 +14,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from 'src/supabase/auth.guard';
-import {
-  CreateSessionDto,
-  CreateSessionWithStudentsDto,
-  UpdateSessionDto,
-} from '../dto/index.dto';
+import { CreateSessionDto, CreateSessionWithStudentsDto, UpdateSessionDto } from '../dto/index.dto';
 import { SessionsService } from '../services/sessions.service';
 
 @Controller('sessions')
@@ -34,36 +30,29 @@ export class SessionController {
     return this.sessionService.getAllSessionsWithStats(req.accessToken, status);
   }
 
+  @Get('/filter')
+  async findAllFilterSessions(@Req() req: Request & { accessToken: string }) {
+    return this.sessionService.findAllFilterSessions(req.accessToken);
+  }
+
   @Get(':id')
-  async getSessionById(
-    @Req() req: Request & { accessToken: string },
-    @Param('id', ParseIntPipe) id: number,
-  ) {
+  async getSessionById(@Req() req: Request & { accessToken: string }, @Param('id', ParseIntPipe) id: number) {
     return this.sessionService.getSessionDetail(req.accessToken, id);
   }
 
   @Get(':id/courses')
-  async getSessionCourses(
-    @Req() req: Request & { accessToken: string },
-    @Param('id', ParseIntPipe) id: number,
-  ) {
+  async getSessionCourses(@Req() req: Request & { accessToken: string }, @Param('id', ParseIntPipe) id: number) {
     return this.sessionService.getCoursesBySession(req.accessToken, id);
   }
 
   @Get(':id/students')
-  async getSessionStudents(
-    @Req() req: Request & { accessToken: string },
-    @Param('id', ParseIntPipe) id: number,
-  ) {
+  async getSessionStudents(@Req() req: Request & { accessToken: string }, @Param('id', ParseIntPipe) id: number) {
     return this.sessionService.getStudentsBySession(req.accessToken, id);
   }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async createSession(
-    @Body() createDto: CreateSessionDto,
-    @Req() req: Request & { accessToken: string },
-  ) {
+  async createSession(@Body() createDto: CreateSessionDto, @Req() req: Request & { accessToken: string }) {
     return this.sessionService.createSession(req.accessToken, createDto);
   }
 
@@ -76,6 +65,7 @@ export class SessionController {
   ) {
     return this.sessionService.updateSession(req.accessToken, id, updateDto);
   }
+
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteSession(
@@ -84,17 +74,14 @@ export class SessionController {
   ): Promise<void> {
     await this.sessionService.deleteSession(req.accessToken, id);
   }
+
   @Delete(':sessionId/students/:studentId')
   async removeStudentFromSession(
     @Param('sessionId') sessionId: number,
     @Param('studentId') studentId: number,
     @Req() req: Request & { accessToken: string },
   ) {
-    return this.sessionService.removeStudentFromSession(
-      req.accessToken,
-      sessionId,
-      studentId,
-    );
+    return this.sessionService.removeStudentFromSession(req.accessToken, sessionId, studentId);
   }
 
   @Patch(':sessionId/courses/:courseId/status')
@@ -104,12 +91,7 @@ export class SessionController {
     @Param('courseId', ParseIntPipe) courseId: number,
     @Body('status') status: string,
   ) {
-    return this.sessionService.updateCourseStatus(
-      req.accessToken,
-      sessionId,
-      courseId,
-      status,
-    );
+    return this.sessionService.updateCourseStatus(req.accessToken, sessionId, courseId, status);
   }
 
   @Post(':sessionId/students')
@@ -118,11 +100,7 @@ export class SessionController {
     @Body('studentIds') studentIds: number[],
     @Req() req: Request & { accessToken: string },
   ) {
-    return this.sessionService.addStudentsToSession(
-      req.accessToken,
-      sessionId,
-      studentIds,
-    );
+    return this.sessionService.addStudentsToSession(req.accessToken, sessionId, studentIds);
   }
 
   @Post('with-students')
@@ -131,10 +109,6 @@ export class SessionController {
     @Body() body: CreateSessionWithStudentsDto,
     @Req() req: Request & { accessToken: string },
   ) {
-    return this.sessionService.createSessionWithStudents(
-      req.accessToken,
-      body.data,
-      body.studentIds,
-    );
+    return this.sessionService.createSessionWithStudents(req.accessToken, body.data, body.studentIds);
   }
 }

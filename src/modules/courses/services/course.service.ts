@@ -1,9 +1,12 @@
-import {
-  BadRequestException,
-  Injectable,
-  InternalServerErrorException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { courses, Prisma, session_students, sessions } from '@prisma/client';
+import { isPast } from 'date-fns';
+import { omit } from 'lodash';
+import { bignumber, equal } from 'mathjs';
+import { Enrollment } from 'src/modules/enrollments/types/enrollment.types';
+import { ProgramCourse } from 'src/modules/programs/types/program.types';
+import { SessionCourse } from 'src/modules/sessions/types';
+import { SharedSessionService } from 'src/modules/shared/services/session.service';
 import { SupabaseService } from '../../../supabase/supabase.service';
 import { CourseType, CreateCourseDto } from '../dto/create-course.dto';
 import { UpdateCourseDto } from '../dto/update-course.dto';
@@ -11,7 +14,10 @@ import { EnrolledStudent, SupabaseEnrollment } from '../types/course.types';
 
 @Injectable()
 export class CourseService {
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly sharedSessionService: SharedSessionService,
+  ) {}
 
   private getDefaultCapacity(courseType: CourseType): number {
     switch (courseType) {
@@ -29,9 +35,7 @@ export class CourseService {
   }
 
   async create(createCourseDto: CreateCourseDto, accessToken: string) {
-    const defaultCapacity = this.getDefaultCapacity(
-      createCourseDto.course_type,
-    );
+    const defaultCapacity = this.getDefaultCapacity(createCourseDto.course_type);
 
     const courseData = {
       course_title: createCourseDto.course_title,
@@ -45,9 +49,7 @@ export class CourseService {
 
   async findAll(accessToken: string) {
     // Get all courses with their enrollments and program associations
-    const { data: courses, error } = await this.supabaseService
-      .getClientWithAuth(accessToken)
-      .from('courses').select(`
+    const { data: courses, error } = await this.supabaseService.getClientWithAuth(accessToken).from('courses').select(`
         *,
         enrollments (
           student_id,
@@ -67,24 +69,14 @@ export class CourseService {
       // Get unique student IDs from approved, active, or completed enrollments
       const uniqueEnrolledStudents = new Set(
         (course.enrollments || [])
-          .filter((enrollment) =>
-            ['APPROVED', 'ACTIVE', 'COMPLETED'].includes(
-              enrollment.enrollment_status,
-            ),
-          )
+          .filter((enrollment) => ['APPROVED', 'ACTIVE', 'COMPLETED'].includes(enrollment.enrollment_status))
           .map((enrollment) => enrollment.student_id),
       );
 
       // Get unique program IDs
-      const uniquePrograms = new Set(
-        (course.program_courses || []).map((pc) => pc.program_id),
-      );
-
-      // Remove the raw arrays from the response
-      const { enrollments, program_courses, ...courseData } = course;
-
+      const uniquePrograms = new Set((course.program_courses || []).map((pc) => pc.program_id));
       return {
-        ...courseData,
+        ...omit(course, ['enrollments', 'program_courses']),
         total_enrolled_students: uniqueEnrolledStudents.size,
         total_programs: uniquePrograms.size,
       };
@@ -105,11 +97,7 @@ export class CourseService {
     return result[0];
   }
 
-  async update(
-    id: string,
-    updateCourseDto: UpdateCourseDto,
-    accessToken: string,
-  ) {
+  async update(id: string, updateCourseDto: UpdateCourseDto, accessToken: string) {
     // First check if course exists
     await this.findOne(id, accessToken);
 
@@ -119,17 +107,10 @@ export class CourseService {
 
     // If course_type is being updated, recalculate default_capacity
     if (updateCourseDto.course_type) {
-      updateData.default_capacity = this.getDefaultCapacity(
-        updateCourseDto.course_type,
-      );
+      updateData.default_capacity = this.getDefaultCapacity(updateCourseDto.course_type);
     }
 
-    return this.supabaseService.update(
-      accessToken,
-      'courses',
-      { course_id: id },
-      updateData,
-    );
+    return this.supabaseService.update(accessToken, 'courses', { course_id: id }, updateData);
   }
 
   async delete(id: string, accessToken: string) {
@@ -137,24 +118,19 @@ export class CourseService {
     await this.findOne(id, accessToken);
 
     // Check if course has any enrollments
-    const { data: enrollments, error: enrollmentError } =
-      await this.supabaseService
-        .getClientWithAuth(accessToken)
-        .from('enrollments')
-        .select('enrollment_id')
-        .eq('course_id', id)
-        .limit(1);
+    const { data: enrollments, error: enrollmentError } = await this.supabaseService
+      .getClientWithAuth(accessToken)
+      .from('enrollments')
+      .select('enrollment_id')
+      .eq('course_id', id)
+      .limit(1);
 
     if (enrollmentError) {
-      throw new InternalServerErrorException(
-        `Failed to check course enrollments: ${enrollmentError.message}`,
-      );
+      throw new InternalServerErrorException(`Failed to check course enrollments: ${enrollmentError.message}`);
     }
 
     if (enrollments && enrollments.length > 0) {
-      throw new BadRequestException(
-        'Cannot delete course with existing enrollments',
-      );
+      throw new BadRequestException('Cannot delete course with existing enrollments');
     }
 
     // If no enrollments exist, proceed with deletion
@@ -165,9 +141,7 @@ export class CourseService {
       .eq('course_id', id);
 
     if (deleteError) {
-      throw new InternalServerErrorException(
-        `Failed to delete course: ${deleteError.message}`,
-      );
+      throw new InternalServerErrorException(`Failed to delete course: ${deleteError.message}`);
     }
 
     return {
@@ -200,9 +174,7 @@ export class CourseService {
       .eq('course_id', id);
 
     if (error) {
-      throw new InternalServerErrorException(
-        `Failed to fetch affiliated programs: ${error.message}`,
-      );
+      throw new InternalServerErrorException(`Failed to fetch affiliated programs: ${error.message}`);
     }
 
     if (!programs || programs.length === 0) {
@@ -237,9 +209,7 @@ export class CourseService {
       .eq('course_id', id);
 
     if (error) {
-      throw new InternalServerErrorException(
-        `Failed to fetch affiliated sessions: ${error.message}`,
-      );
+      throw new InternalServerErrorException(`Failed to fetch affiliated sessions: ${error.message}`);
     }
 
     if (!sessions || sessions.length === 0) {
@@ -254,10 +224,7 @@ export class CourseService {
     }));
   }
 
-  async getEnrolledStudents(
-    id: string,
-    accessToken: string,
-  ): Promise<EnrolledStudent[]> {
+  async getEnrolledStudents(id: string, accessToken: string): Promise<EnrolledStudent[]> {
     // First check if course exists
     await this.findOne(id, accessToken);
 
@@ -295,134 +262,401 @@ export class CourseService {
       .order('created_at', { ascending: false });
 
     if (error) {
-      throw new InternalServerErrorException(
-        `Failed to fetch enrolled students: ${error.message}`,
-      );
+      throw new InternalServerErrorException(`Failed to fetch enrolled students: ${error.message}`);
     }
 
     if (!enrollments || enrollments.length === 0) {
-      throw new NotFoundException(
-        `No enrolled students found for course with ID ${id}`,
-      );
+      throw new NotFoundException(`No enrolled students found for course with ID ${id}`);
     }
 
     // Format the response to include both student and enrollment information
-    return (enrollments as unknown as SupabaseEnrollment[]).map(
-      (enrollment) => ({
-        student: {
-          id: enrollment.student.student_id,
-          reg_number: enrollment.student.reg_number,
-          first_name: enrollment.student.first_name,
-          last_name: enrollment.student.last_name,
-          email: enrollment.student.email,
-          profile_picture: enrollment.student.profile_picture,
-          program: enrollment.student.program,
-        },
-        session: {
-          session_id: enrollment.session.session_id,
-          session_name: enrollment.session.session_name,
-        },
-        enrollment: {
-          status: enrollment.enrollment_status,
-          special_request: enrollment.special_request,
-          rejection_reason: enrollment.rejection_reason,
-          enrolled_at: enrollment.created_at,
-        },
-      }),
-    );
+    return (enrollments as unknown as SupabaseEnrollment[]).map((enrollment) => ({
+      student: {
+        id: enrollment.student.student_id,
+        reg_number: enrollment.student.reg_number,
+        first_name: enrollment.student.first_name,
+        last_name: enrollment.student.last_name,
+        email: enrollment.student.email,
+        profile_picture: enrollment.student.profile_picture,
+        program: enrollment.student.program,
+      },
+      session: {
+        session_id: enrollment.session.session_id,
+        session_name: enrollment.session.session_name,
+      },
+      enrollment: {
+        status: enrollment.enrollment_status,
+        special_request: enrollment.special_request,
+        rejection_reason: enrollment.rejection_reason,
+        enrolled_at: enrollment.created_at,
+      },
+    }));
+  }
+
+  async getStudentCoursesInSessionsUsingId(
+    studentId: number | string,
+    sessionIds: (string | number)[],
+    onlyEnrolled = false,
+  ) {
+    const prismaSql = Prisma.sql([
+      `
+        select
+          sc.course_id,
+          sc.status,
+          jsonb_build_object(
+            'session_id',
+            s.session_id,
+            'session_status',
+            s.session_status,
+            'enrollment_deadline',
+            s.enrollment_deadline
+          ) as session,
+          jsonb_build_object(
+            'course_id',
+            c.course_id,
+            'course_title',
+            c.course_title,
+            'course_code',
+            c.course_code,
+            'course_credits',
+            c.course_credits,
+            'course_type',
+            c.course_type,
+            'default_capacity',
+            c.default_capacity,
+            'course_desc',
+            c.course_desc,
+            'created_at',
+            c.created_at,
+            'updated_at',
+            c.updated_at
+          ) as course,
+          coalesce(
+            (
+              select
+                jsonb_agg(
+                  jsonb_build_object(
+                    'session_id',
+                    e.session_id,
+                    'enrollment_status',
+                    e.enrollment_status,
+                    'rejection_reason',
+                    e.rejection_reason,
+                    'created_at',
+                    e.created_at,
+                    'updated_at',
+                    e.updated_at
+                  )
+                )
+              from
+                enrollments e
+              where
+                e.course_id = c.course_id
+                and
+                e.session_id = s.session_id
+                and
+                e.student_id = stu.student_id
+            ),
+            '[]'::jsonb
+          ) as enrollments,
+          coalesce(
+            (
+              select
+                true
+              from
+                session_students st
+              where
+                st.session_id = s.session_id
+                and
+                st.student_id = stu.student_id
+            ),
+            false
+          ) as is_student_in_session,
+          cast(
+            coalesce(
+              (
+                select
+                  count(pc.course_id)
+                from
+                  program_courses pc
+                where
+                  pc.program_id = stu.program_id
+              ),
+              0
+            ) as int
+          ) as no_of_program_course
+        from
+          session_courses sc
+        inner join
+          sessions s
+          on (sc.session_id = s.session_id)
+        inner join
+          courses c
+          on (sc.course_id = c.course_id)
+        inner join
+          students stu
+          on (stu.student_id = ${studentId}) 
+        ${
+          onlyEnrolled
+            ? `
+                inner join
+                  enrollments e
+                  on (
+                    e.course_id = c.course_id
+                    and
+                    e.session_id = s.session_id
+                    and
+                    e.student_id = stu.student_id
+                  )
+              `
+            : ''
+        } 
+        where
+          s.session_id in (${sessionIds.join(',')})
+          ${
+            onlyEnrolled
+              ? `
+                  and
+                  e.enrollment_status in ('APPROVED', 'ACTIVE', 'COMPLETED')
+                `
+              : ''
+          }
+      `,
+    ]);
+
+    type CourseRespType = Pick<SessionCourse, 'course_id' | 'status'> & {
+      session: Pick<sessions, 'session_id' | 'enrollment_deadline' | 'session_status'>;
+      course: courses;
+      enrollments: Pick<
+        Enrollment,
+        'session_id' | 'enrollment_status' | 'rejection_reason' | 'created_at' | 'updated_at'
+      >[];
+      is_student_in_session: boolean;
+      no_of_program_course: number;
+    };
+
+    const eligibleCourses = await this.sharedSessionService.prismaClient.$queryRaw<CourseRespType[]>(prismaSql);
+
+    const processedCourses = (eligibleCourses ?? []).map((record) => {
+      const inActiveSession = record.session.session_status === 'ACTIVE';
+      const enrolledStatusList = ['APPROVED', 'ACTIVE', 'COMPLETED'];
+      const isCourseOpenForSession = record.status === 'OPEN';
+      const hasAcceptedEnrollment = record.enrollments.some((enrollment) =>
+        enrolledStatusList.includes(enrollment.enrollment_status),
+      );
+
+      const hasPendingEnrollment = record.enrollments.some((enrollment) => enrollment.enrollment_status === 'PENDING');
+      const enrollmentDeadline = record.session.enrollment_deadline;
+      const hasPastEnrollmentDeadline = isPast(new Date(enrollmentDeadline));
+      const isStudentInSession = !!record.is_student_in_session;
+      const isStudentInActiveSession = isStudentInSession && inActiveSession;
+
+      return {
+        ...record.course,
+        in_active_session: inActiveSession,
+        is_enrolled: hasAcceptedEnrollment,
+        is_student_in_session: isStudentInSession,
+        is_student_in_active_session: isStudentInActiveSession,
+        session_id: record.session.session_id,
+        can_enroll:
+          !(hasAcceptedEnrollment || hasPendingEnrollment) &&
+          inActiveSession &&
+          !hasPastEnrollmentDeadline &&
+          isStudentInActiveSession &&
+          isCourseOpenForSession,
+        can_request:
+          !(hasAcceptedEnrollment || hasPendingEnrollment) &&
+          inActiveSession &&
+          !hasPastEnrollmentDeadline &&
+          isStudentInActiveSession,
+        enrollment_deadline: enrollmentDeadline,
+        student_course_enrollements: record.enrollments,
+        total_programs: bignumber(record.no_of_program_course).toNumber(),
+        availability_status: record.status,
+      };
+    });
+
+    return processedCourses;
   }
 
   async getEligibleCourses(accessToken: string, studentId: number) {
     const supabase = this.supabaseService.getClientWithAuth(accessToken);
+    const activeSessionIds = await this.sharedSessionService.getActiveSessionIds(supabase);
 
-    const { data: studentData, error: studentError } = await supabase
-      .from('students')
-      .select('program_id')
-      .eq('student_id', studentId)
-      .single();
-
-    if (studentError) {
-      throw new Error(`Failed to fetch student: ${studentError.message}`);
+    if (activeSessionIds.every((id) => equal(id, 0))) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'NO_ACTIVE_SESSION',
+        message: 'There is no active session at the moment',
+      });
     }
 
-    const studentProgramId = studentData.program_id;
-
-    const { data: sessionData, error: sessionError } = await supabase
+    const { data: activeSessionStudents, error: activeSessionStudentError } = await supabase
       .from('session_students')
-      .select('session_id, sessions(session_status, session_id)')
-      .eq('student_id', studentId);
-
-    if (sessionError) {
-      throw new Error(`Failed to fetch sessions: ${sessionError.message}`);
-    }
-
-    const activeSession = (sessionData || []).find(
-      (s: any) => s.sessions?.session_status === 'ACTIVE',
-    );
-
-    if (!activeSession) {
-      return [];
-      // No active session for the student
-    }
-
-    const sessionId = activeSession.session_id;
-
-    const { data: eligibleCourses, error: courseError } = await supabase
-      .from('session_courses')
       .select(
         `
-      course_id,
-      status,
-      courses (
-        *,
-        enrollments (
+          session_id,
           student_id,
-          enrollment_status
-        ),
-        program_courses (
-          program_id
-        )
+          created_at,
+          updated_at
+        `,
       )
-    `,
-      )
-      .eq('session_id', sessionId);
+      .in('session_id', activeSessionIds)
+      .eq('student_id', studentId)
+      .limit(1);
 
-    if (courseError) {
-      throw new Error(
-        `Failed to fetch eligible courses: ${courseError.message}`,
-      );
+    if (activeSessionStudentError) {
+      throw new Error(`Failed to check if student is in active session: ${activeSessionStudentError.message}`);
     }
 
-    const filteredCourses = (eligibleCourses || []).filter((item: any) => {
-      const programCourses = item.courses?.program_courses || [];
-      return programCourses.some((pc) => pc.program_id === studentProgramId);
-    });
+    if (!activeSessionStudents?.length) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'NOT_IN_ACTIVE_SESSION',
+        message: 'Student is currently not in active session. Kindly contact your registrar for possible resolution.',
+      });
+    }
 
-    const processedCourses = filteredCourses.map((item) => {
-      const course: any = item.courses;
+    const processedCourses = (await this.getStudentCoursesInSessionsUsingId(studentId, activeSessionIds)).map(
+      (course) => {
+        return {
+          ...course,
+          active_session_ids: activeSessionIds,
+        };
+      },
+    );
 
-      const uniqueEnrolledStudents = new Set(
-        (course.enrollments || [])
-          .filter((enrollment) =>
-            ['APPROVED', 'ACTIVE', 'COMPLETED'].includes(
-              enrollment.enrollment_status,
+    return processedCourses;
+  }
+
+  async getStudentProgramCoursesUsingId(studentId: number | string) {
+    const supabase = this.sharedSessionService.adminSupabaseClient;
+
+    const { data: programCourses, error: programCourseError } = await supabase
+      .from('program_courses')
+      .select(
+        `
+          course_id,
+          program_id,
+          programs!inner (
+            students!inner (
+              student_id
+            )
+          ),
+          courses!inner (
+            *,
+            enrollments (
+              session_id,
+              enrollment_status,
+              rejection_reason,
+              created_at,
+              updated_at,
+              sessions!inner (
+                session_id,
+                session_status,
+                enrollment_deadline
+              )
             ),
+            session_courses (
+              status,
+              sessions!inner (
+                session_id,
+                session_status,
+                enrollment_deadline,
+                session_students (
+                  *
+                )
+              )
+            )
           )
-          .map((e) => e.student_id),
+        `,
+      )
+      .eq('programs.students.student_id', studentId)
+      .eq(`courses.enrollments.student_id`, studentId)
+      .eq(`courses.session_courses.sessions.session_students.student_id`, studentId)
+      .eq(`courses.session_courses.sessions.session_status`, 'ACTIVE')
+      .eq('courses.enrollments.sessions.session_status', 'ACTIVE');
+
+    if (programCourseError) {
+      throw new Error(`Failed to fetch program courses: ${programCourseError.message}`);
+    }
+
+    const uniquePrograms = new Set((programCourses || []).map((pc) => pc.program_id));
+    const processedCourses = programCourses.map((record) => {
+      const item = record as unknown as Pick<ProgramCourse, 'course_id' | 'program_id'> & {
+        programs: {
+          students: {
+            student_id: number;
+          }[];
+        };
+        courses: CourseType & {
+          enrollments: (Pick<
+            Enrollment,
+            'session_id' | 'enrollment_status' | 'rejection_reason' | 'created_at' | 'updated_at'
+          > & {
+            sessions: Pick<sessions, 'session_id' | 'session_status' | 'enrollment_deadline'>;
+          })[];
+          session_courses: (Pick<SessionCourse, 'status'> & {
+            sessions: Pick<sessions, 'session_id' | 'session_status' | 'enrollment_deadline'> & {
+              session_students: session_students[];
+            };
+          })[];
+        };
+      };
+
+      const course = item.courses;
+
+      const inActiveSession = !!course.session_courses.length;
+      const enrolledStatusList = ['APPROVED', 'ACTIVE', 'COMPLETED'];
+      const isCourseOpenForSession = course.session_courses.some((course) => course.status === 'OPEN');
+      const hasAcceptedEnrollment = course.enrollments.some((enrollment) =>
+        enrolledStatusList.includes(enrollment.enrollment_status),
       );
 
-      const uniquePrograms = new Set(
-        (course.program_courses || []).map((pc) => pc.program_id),
-      );
+      const hasPendingEnrollment = course.enrollments.some((enrollment) => enrollment.enrollment_status === 'PENDING');
+      const sessionCourse = course.session_courses.length ? course.session_courses[0] : undefined;
+      const enrollmentDeadline = sessionCourse?.sessions?.enrollment_deadline;
 
-      const { enrollments, program_courses, ...courseData } = course;
+      const hasPastEnrollmentDeadline = enrollmentDeadline ? isPast(new Date(enrollmentDeadline)) : false;
+      const isStudentInSession = !!sessionCourse?.sessions?.session_students?.length;
+      const isStudentInActiveSession = inActiveSession && !!sessionCourse?.sessions?.session_students?.length;
 
       return {
-        ...courseData,
-        total_enrolled_students: uniqueEnrolledStudents.size,
+        ...omit(course, ['enrollments', 'session_courses']),
+        in_active_session: inActiveSession,
+        is_enrolled: hasAcceptedEnrollment,
+        is_student_in_session: isStudentInSession,
+        is_student_in_active_session: isStudentInActiveSession,
+        session_id: sessionCourse?.sessions?.session_id,
+        can_enroll:
+          !(hasAcceptedEnrollment || hasPendingEnrollment) &&
+          inActiveSession &&
+          !hasPastEnrollmentDeadline &&
+          isStudentInActiveSession &&
+          isCourseOpenForSession,
+        can_request:
+          !(hasAcceptedEnrollment || hasPendingEnrollment) &&
+          inActiveSession &&
+          !hasPastEnrollmentDeadline &&
+          isStudentInActiveSession,
+        enrollment_deadline: enrollmentDeadline,
+        student_course_enrollements: course.enrollments,
         total_programs: uniquePrograms.size,
-        availability_status: item.status,
-        session_id: sessionId,
+        availability_status: isCourseOpenForSession ? 'OPEN' : 'CLOSED',
+      };
+    });
+
+    return processedCourses;
+  }
+
+  async getStudentProgramCourses(accessToken: string, studentId: number) {
+    const supabase = this.supabaseService.getClientWithAuth(accessToken);
+    const activeSessionIds = await this.sharedSessionService.getActiveSessionIds(supabase);
+
+    const processedCourses = (await this.getStudentProgramCoursesUsingId(studentId)).map((course) => {
+      return {
+        ...course,
+        active_session_ids: activeSessionIds,
       };
     });
 
