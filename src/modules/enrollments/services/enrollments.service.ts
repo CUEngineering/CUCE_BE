@@ -466,15 +466,15 @@ export class EnrollmentsService {
   > {
     const activeSessionIds = await this.sharedSessionService.getActiveSessionIds();
     const { role, role_id } = options;
-    const assignedTo = options.assigned_to || 'none';
+    let assignedTo = options.assigned_to || 'none';
     let sessionId = options.session_id;
 
     if (!isNumeric(sessionId)) {
       sessionId = activeSessionIds[0];
     }
 
-    if (role === 'registrar' && assignedTo === 'others') {
-      return [];
+    if (role === 'registrar' && assignedTo !== 'me') {
+      assignedTo = 'me';
     }
 
     let registrarId: string = String(role === 'registrar' ? (role_id ?? '') : '');

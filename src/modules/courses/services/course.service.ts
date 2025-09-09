@@ -1,10 +1,9 @@
 import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
-import { courses, Prisma, session_students, sessions } from '@prisma/client';
+import { courses, Prisma, program_courses, session_courses, sessions } from '@prisma/client';
 import { isPast } from 'date-fns';
 import { omit } from 'lodash';
 import { bignumber, equal } from 'mathjs';
 import { Enrollment } from 'src/modules/enrollments/types/enrollment.types';
-import { ProgramCourse } from 'src/modules/programs/types/program.types';
 import { SessionCourse } from 'src/modules/sessions/types';
 import { SharedSessionService } from 'src/modules/shared/services/session.service';
 import { SupabaseService } from '../../../supabase/supabase.service';
@@ -22,15 +21,17 @@ export class CourseService {
   private getDefaultCapacity(courseType: CourseType): number {
     switch (courseType) {
       case CourseType.UNDERGRADUATE:
-        return 4;
+        return 6;
       case CourseType.GRADUATE:
         return 3;
       case CourseType.MASTERS:
-        return 2;
+        return 6;
       case CourseType.DOCTORATE:
-        return 1;
-      default:
         return 4;
+      case CourseType.GENERAL:
+        return 12;
+      default:
+        return 12;
     }
   }
 
@@ -353,9 +354,30 @@ export class CourseService {
               where
                 e.course_id = c.course_id
                 and
-                e.session_id = s.session_id
-                and
                 e.student_id = stu.student_id
+                and
+                e.session_id = coalesce(
+                  (
+                    select
+                      ie.session_id
+                    from 
+                      enrollments ie
+                    where
+                      ie.course_id = c.course_id
+                      and
+                      ie.student_id = stu.student_id
+                      and
+                      ie.enrollment_status in (
+                        'ACTIVE',
+                        'APPROVED',
+                        'COMPLETED'
+                      )
+                    order by
+                      ie.updated_at asc
+                    limit 1
+                  ),
+                  s.session_id
+                )
             ),
             '[]'::jsonb
           ) as enrollments,
@@ -394,8 +416,15 @@ export class CourseService {
           courses c
           on (sc.course_id = c.course_id)
         inner join
+          program_courses pc
+          on (
+            pc.course_id = c.course_id
+          )
+        inner join
           students stu
-          on (stu.student_id = ${studentId}) 
+          on (
+            pc.program_id = stu.program_id
+          ) 
         ${
           onlyEnrolled
             ? `
@@ -413,6 +442,8 @@ export class CourseService {
         } 
         where
           s.session_id in (${sessionIds.join(',')})
+          and
+          stu.student_id = ${studentId}
           ${
             onlyEnrolled
               ? `
@@ -530,123 +561,210 @@ export class CourseService {
   }
 
   async getStudentProgramCoursesUsingId(studentId: number | string) {
-    const supabase = this.sharedSessionService.adminSupabaseClient;
-
-    const { data: programCourses, error: programCourseError } = await supabase
-      .from('program_courses')
-      .select(
-        `
-          course_id,
-          program_id,
-          programs!inner (
-            students!inner (
-              student_id
-            )
-          ),
-          courses!inner (
-            *,
-            enrollments (
-              session_id,
-              enrollment_status,
-              rejection_reason,
-              created_at,
-              updated_at,
-              sessions!inner (
-                session_id,
-                session_status,
-                enrollment_deadline
-              )
-            ),
-            session_courses (
-              status,
-              sessions!inner (
-                session_id,
-                session_status,
-                enrollment_deadline,
-                session_students (
-                  *
+    const prismaSql = Prisma.sql([
+      `
+        select
+          pc.course_id,
+          pc.program_id,
+          jsonb_build_object(
+            'course_id',
+            c.course_id,
+            'course_title',
+            c.course_title,
+            'course_code',
+            c.course_code,
+            'course_credits',
+            c.course_credits,
+            'course_type',
+            c.course_type,
+            'default_capacity',
+            c.default_capacity,
+            'course_desc',
+            c.course_desc,
+            'created_at',
+            c.created_at,
+            'updated_at',
+            c.updated_at
+          ) as course,
+          coalesce(
+            (
+              select
+                jsonb_agg(
+                  jsonb_build_object(
+                    'session_id',
+                    e.session_id,
+                    'enrollment_status',
+                    e.enrollment_status,
+                    'rejection_reason',
+                    e.rejection_reason,
+                    'created_at',
+                    e.created_at,
+                    'updated_at',
+                    e.updated_at
+                  )
                 )
+              from
+                enrollments e
+              where
+                e.course_id = c.course_id
+                and
+                e.student_id = stu.student_id
+                and
+                e.session_id = coalesce(
+                  (
+                    select
+                      ie.session_id
+                    from 
+                      enrollments ie
+                    where
+                      ie.course_id = c.course_id
+                      and
+                      ie.student_id = stu.student_id
+                      and
+                      ie.enrollment_status in (
+                        'ACTIVE',
+                        'APPROVED',
+                        'COMPLETED'
+                      )
+                    order by
+                      ie.updated_at asc
+                    limit 1
+                  ),
+                  coalesce(
+                    (
+                      select
+                        s.session_id
+                      from 
+                        sessions s
+                      where
+                        s.session_status = 'ACTIVE'
+                      limit 1
+                    ),
+                    0
+                  )
+                )
+            ),
+            '[]'::jsonb
+          ) as enrollments,
+          coalesce(
+            (
+              select
+                true
+              from
+                session_students st
+              inner join
+                sessions s
+                on (
+                  s.session_id = st.session_id
+                )
+              where
+                s.session_status = 'ACTIVE'
+                and
+                st.student_id = stu.student_id
+              limit 1
+            ),
+            false
+          ) as is_student_in_active_session,
+          (
+            select
+              jsonb_build_object(
+                'session_course',
+                to_jsonb(sc),
+                'session',
+                to_jsonb(s)
               )
-            )
-          )
-        `,
-      )
-      .eq('programs.students.student_id', studentId)
-      .eq(`courses.enrollments.student_id`, studentId)
-      .eq(`courses.session_courses.sessions.session_students.student_id`, studentId)
-      .eq(`courses.session_courses.sessions.session_status`, 'ACTIVE')
-      .eq('courses.enrollments.sessions.session_status', 'ACTIVE');
+            from
+              session_courses sc
+            inner join
+              sessions s
+              on (
+                s.session_id = sc.session_id
+              )
+            where
+              s.session_status = 'ACTIVE'
+              and
+              sc.course_id = c.course_id
+            limit 1
+          ) as active_session_course
+        from
+          program_courses pc
+        inner join
+          courses c
+          on (pc.course_id = c.course_id)
+        inner join
+          students stu
+          on (stu.program_id = pc.program_id)
+        where
+          stu.student_id = ${Number(studentId)}
+      `,
+    ]);
 
-    if (programCourseError) {
-      throw new Error(`Failed to fetch program courses: ${programCourseError.message}`);
+    type ProgramCourseRespType = Pick<program_courses, 'course_id' | 'program_id'> & {
+      course: courses;
+      enrollments: Pick<
+        Enrollment,
+        'session_id' | 'enrollment_status' | 'rejection_reason' | 'created_at' | 'updated_at'
+      >[];
+      is_student_in_active_session: boolean;
+      active_session_course?: {
+        session_course: session_courses;
+        session: sessions;
+      } | null;
+    };
+
+    try {
+      const programCourses = await this.sharedSessionService.prismaClient.$queryRaw<ProgramCourseRespType[]>(prismaSql);
+      const uniquePrograms = new Set((programCourses || []).map((pc) => pc.program_id));
+
+      const processedCourses = programCourses.map((record) => {
+        const inActiveSession = !!record.active_session_course;
+        const enrolledStatusList = ['APPROVED', 'ACTIVE', 'COMPLETED'];
+        const activeSessionCourse = record.active_session_course?.session_course ?? undefined;
+        const activeSession = record.active_session_course?.session ?? undefined;
+        const isCourseOpenForSession = activeSessionCourse?.status === 'OPEN';
+        const hasAcceptedEnrollment = record.enrollments.some((enrollment) =>
+          enrolledStatusList.includes(enrollment.enrollment_status),
+        );
+
+        const hasPendingEnrollment = record.enrollments.some(
+          (enrollment) => enrollment.enrollment_status === 'PENDING',
+        );
+        const enrollmentDeadline = activeSession?.enrollment_deadline;
+
+        const hasPastEnrollmentDeadline = enrollmentDeadline ? isPast(new Date(enrollmentDeadline)) : false;
+        const isStudentInSession = !!record.is_student_in_active_session;
+        const isStudentInActiveSession = inActiveSession && isStudentInSession;
+
+        return {
+          ...record.course,
+          in_active_session: inActiveSession,
+          is_enrolled: hasAcceptedEnrollment,
+          is_student_in_session: isStudentInSession,
+          is_student_in_active_session: isStudentInActiveSession,
+          session_id: activeSession?.session_id,
+          can_enroll:
+            !(hasAcceptedEnrollment || hasPendingEnrollment) &&
+            inActiveSession &&
+            !hasPastEnrollmentDeadline &&
+            isStudentInActiveSession &&
+            isCourseOpenForSession,
+          can_request:
+            !(hasAcceptedEnrollment || hasPendingEnrollment) &&
+            inActiveSession &&
+            !hasPastEnrollmentDeadline &&
+            isStudentInActiveSession,
+          enrollment_deadline: enrollmentDeadline,
+          student_course_enrollements: record.enrollments,
+          total_programs: uniquePrograms.size,
+          availability_status: isCourseOpenForSession ? 'OPEN' : 'CLOSED',
+        };
+      });
+
+      return processedCourses;
+    } catch (e) {
+      console.log(e);
+      throw new Error(`Failed to fetch program courses: ${e.message}`);
     }
-
-    const uniquePrograms = new Set((programCourses || []).map((pc) => pc.program_id));
-    const processedCourses = programCourses.map((record) => {
-      const item = record as unknown as Pick<ProgramCourse, 'course_id' | 'program_id'> & {
-        programs: {
-          students: {
-            student_id: number;
-          }[];
-        };
-        courses: CourseType & {
-          enrollments: (Pick<
-            Enrollment,
-            'session_id' | 'enrollment_status' | 'rejection_reason' | 'created_at' | 'updated_at'
-          > & {
-            sessions: Pick<sessions, 'session_id' | 'session_status' | 'enrollment_deadline'>;
-          })[];
-          session_courses: (Pick<SessionCourse, 'status'> & {
-            sessions: Pick<sessions, 'session_id' | 'session_status' | 'enrollment_deadline'> & {
-              session_students: session_students[];
-            };
-          })[];
-        };
-      };
-
-      const course = item.courses;
-
-      const inActiveSession = !!course.session_courses.length;
-      const enrolledStatusList = ['APPROVED', 'ACTIVE', 'COMPLETED'];
-      const isCourseOpenForSession = course.session_courses.some((course) => course.status === 'OPEN');
-      const hasAcceptedEnrollment = course.enrollments.some((enrollment) =>
-        enrolledStatusList.includes(enrollment.enrollment_status),
-      );
-
-      const hasPendingEnrollment = course.enrollments.some((enrollment) => enrollment.enrollment_status === 'PENDING');
-      const sessionCourse = course.session_courses.length ? course.session_courses[0] : undefined;
-      const enrollmentDeadline = sessionCourse?.sessions?.enrollment_deadline;
-
-      const hasPastEnrollmentDeadline = enrollmentDeadline ? isPast(new Date(enrollmentDeadline)) : false;
-      const isStudentInSession = !!sessionCourse?.sessions?.session_students?.length;
-      const isStudentInActiveSession = inActiveSession && !!sessionCourse?.sessions?.session_students?.length;
-
-      return {
-        ...omit(course, ['enrollments', 'session_courses']),
-        in_active_session: inActiveSession,
-        is_enrolled: hasAcceptedEnrollment,
-        is_student_in_session: isStudentInSession,
-        is_student_in_active_session: isStudentInActiveSession,
-        session_id: sessionCourse?.sessions?.session_id,
-        can_enroll:
-          !(hasAcceptedEnrollment || hasPendingEnrollment) &&
-          inActiveSession &&
-          !hasPastEnrollmentDeadline &&
-          isStudentInActiveSession &&
-          isCourseOpenForSession,
-        can_request:
-          !(hasAcceptedEnrollment || hasPendingEnrollment) &&
-          inActiveSession &&
-          !hasPastEnrollmentDeadline &&
-          isStudentInActiveSession,
-        enrollment_deadline: enrollmentDeadline,
-        student_course_enrollements: course.enrollments,
-        total_programs: uniquePrograms.size,
-        availability_status: isCourseOpenForSession ? 'OPEN' : 'CLOSED',
-      };
-    });
-
-    return processedCourses;
   }
 
   async getStudentProgramCourses(accessToken: string, studentId: number) {
