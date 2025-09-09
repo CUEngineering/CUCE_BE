@@ -1,5 +1,5 @@
-import { IsEnum, IsInt, IsNotEmpty, IsString, Min } from 'class-validator';
 import { Transform } from 'class-transformer';
+import { IsEnum, IsInt, IsNotEmpty, IsString, Min } from 'class-validator';
 
 // Define CourseType enum here since we can't import it directly
 export enum CourseType {
@@ -7,6 +7,7 @@ export enum CourseType {
   GRADUATE = 'GRADUATE',
   MASTERS = 'MASTERS',
   DOCTORATE = 'DOCTORATE',
+  GENERAL = 'GENERAL',
 }
 
 export class CreateCourseDto {

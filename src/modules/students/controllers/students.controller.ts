@@ -34,18 +34,30 @@ export class StudentsController {
     private readonly studentsService: StudentsService,
   ) {}
 
-  @Get()
-  async findAll(
+  @Get('/')
+  async findAllStudents(
     @Req() req: Request & { accessToken: string; user: { role: Lowercase<UserType>; [key: string]: string } },
+  ) {
+    const role = String(req.user.role).toLowerCase();
+    if (!['admin'].includes(role)) {
+      throw new ForbiddenException('Only admins can view student list');
+    }
+
+    return this.studentsService.findAllStudents({});
+  }
+
+  @Get('sessions/:sessionId')
+  async findAllSessionStudents(
+    @Req() req: Request & { accessToken: string; user: { role: Lowercase<UserType>; [key: string]: string } },
+    @Param('sessionId') sessionId: string | number,
     @Query('assigned_to') assignedTo: 'all' | 'none' | 'me' | 'others',
-    @Query('session_id') sessionId?: string | number,
   ) {
     const role = String(req.user.role).toLowerCase();
     if (!['admin', 'registrar'].includes(role)) {
-      throw new ForbiddenException('Only admins and registrars can view student list');
+      throw new ForbiddenException('Only admins and registrars can view session student list');
     }
 
-    return this.studentsService.findAll({
+    return this.studentsService.findAllSessionStudents({
       accessToken: req.accessToken,
       role: role as 'admin' | 'registrar',
       roleId: role === 'admin' ? req.user.admin_id : req.user.registrar_id,

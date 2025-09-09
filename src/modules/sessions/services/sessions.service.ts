@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, sessions } from '@prisma/client';
 import { equal } from 'mathjs';
 import { SharedSessionService } from 'src/modules/shared/services/session.service';
 import { SupabaseService } from '../../../supabase/supabase.service';
@@ -242,13 +242,18 @@ export class SessionsService {
         throw new BadRequestException(`Cannot close a session with status ${session.session_status}`);
       }
 
-      // Update the session status to CLOSED
-      const updatedSession = await this.prisma.sessions.update({
-        where: { session_id: sessionId },
-        data: {
-          session_status: 'CLOSED',
-        },
-      });
+      // Update the session status to ACTIVE
+      await this.prisma.$executeRaw`
+        update 
+          sessions
+        set
+          session_status = 'CLOSED',
+          end_date = now()
+        where
+          session_id = ${session.session_id}
+      `;
+
+      const updatedSession = await this.findOne(session.session_id);
 
       // Update enrollment statuses from ACTIVE to COMPLETED
       await this.enrollmentsService.updateEnrollmentsForSessionChange(sessionId, 'CLOSED');
@@ -352,6 +357,22 @@ export class SessionsService {
     } catch (error) {
       throw new InternalServerErrorException(`Failed to retrieve sessions: ${error.message}`);
     }
+  }
+
+  async fecthActiveSession() {
+    const sessions = await this.prisma.$queryRaw<sessions[]>`
+      select
+        s.*
+      from
+        sessions s
+      where
+        s.session_status = 'ACTIVE'
+      order by
+        s.created_at asc
+      limit 1
+    `;
+
+    return sessions[0];
   }
 
   async getStudentsBySession(accessToken: string, sessionId: number) {
