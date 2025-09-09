@@ -1,18 +1,9 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Post,
-  Delete,
-  UseGuards,
-  Req,
-  ParseIntPipe,
-  Patch,
-} from '@nestjs/common';
-import { DashboardService } from '../services/dashboard.service';
-import { AuthGuard } from '../../../supabase/auth.guard';
+import { Controller, Get, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
+import { get } from 'lodash';
+import { AuthorizedRoles } from 'src/common/role.decorator';
+import { AuthGuard } from '../../../supabase/auth.guard';
+import { DashboardService } from '../services/dashboard.service';
 
 @Controller('dashboard')
 @UseGuards(AuthGuard) // Apply authentication guard to all endpoints
@@ -20,7 +11,15 @@ export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
   @Get('admin/stats')
-  async getDashboardCounts(@Req() req: Request & { accessToken: string }) {
-    return this.dashboardService.getAdminDashCounts(req.accessToken);
+  @AuthorizedRoles(['ADMIN'])
+  async getAdminDashboardStats() {
+    return this.dashboardService.getAdminDashboardStats();
+  }
+
+  @Get('registrar/stats')
+  @AuthorizedRoles(['REGISTRAR'])
+  async getRegistrarDashboardCounts(@Req() req: Request) {
+    const registrarId = get(req, 'user.registrar_id', 0) as string | number;
+    return this.dashboardService.getRegistrarDashboardStats(registrarId);
   }
 }

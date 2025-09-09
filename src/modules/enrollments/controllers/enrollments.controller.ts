@@ -46,7 +46,7 @@ export class EnrollmentController {
       session_id,
       role: String(role).toLowerCase() as 'student' | 'admin' | 'registrar',
       role_id: currentUserRoleId,
-      assigned_to: assigned_to || 'none',
+      assigned_to: assigned_to || 'me',
     };
 
     return this.enrollmentService.getEnrollmentListView(options);

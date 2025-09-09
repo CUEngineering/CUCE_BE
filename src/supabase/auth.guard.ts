@@ -54,6 +54,7 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Inject,
   Injectable,
   UnauthorizedException,
@@ -63,6 +64,7 @@ import { Reflector } from '@nestjs/core';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { Request } from 'express';
 import { IS_PUBLIC_KEY } from 'src/common/public.decorator';
+import { AUTH_USER_ROLE_KEY, AUTHORIZED_ROLE_TYPE } from 'src/common/role.decorator';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -74,9 +76,7 @@ export class AuthGuard implements CanActivate {
     private reflector: Reflector,
   ) {
     const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
-    const supabaseServiceKey = this.configService.get<string>(
-      'SUPABASE_SERVICE_ROLE_KEY',
-    );
+    const supabaseServiceKey = this.configService.get<string>('SUPABASE_SERVICE_ROLE_KEY');
 
     if (!supabaseUrl || !supabaseServiceKey) {
       throw new Error('Supabase URL and Service Role Key must be provided');
@@ -95,9 +95,16 @@ export class AuthGuard implements CanActivate {
       context.getHandler(),
       context.getClass(),
     ]);
+
     if (isPublic) {
       return true;
     }
+
+    const authorizedRoles =
+      this.reflector.getAllAndOverride<AUTHORIZED_ROLE_TYPE[]>(AUTH_USER_ROLE_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]) ?? [];
 
     const request = context.switchToHttp().getRequest<Request>();
     const authHeader = request.headers.authorization;
@@ -134,18 +141,21 @@ export class AuthGuard implements CanActivate {
 
       const role = roleData.role.toUpperCase();
 
+      if (authorizedRoles.length && !authorizedRoles.includes(role)) {
+        throw new ForbiddenException('You dont have sufficient permission to access this resource');
+      }
+
       // Fetch role-specific id
       let roleIdField = '';
       let roleIdValue = null;
 
       switch (role) {
         case 'STUDENT': {
-          const { data: studentData, error: studentError } =
-            await this.adminClient
-              .from('students')
-              .select('student_id')
-              .eq('user_id', userId)
-              .single();
+          const { data: studentData, error: studentError } = await this.adminClient
+            .from('students')
+            .select('student_id')
+            .eq('user_id', userId)
+            .single();
 
           if (studentError || !studentData?.student_id) {
             throw new UnauthorizedException('Student profile not found');
@@ -157,12 +167,11 @@ export class AuthGuard implements CanActivate {
         }
 
         case 'REGISTRAR': {
-          const { data: registrarData, error: registrarError } =
-            await this.adminClient
-              .from('registrars')
-              .select('registrar_id')
-              .eq('user_id', userId)
-              .single();
+          const { data: registrarData, error: registrarError } = await this.adminClient
+            .from('registrars')
+            .select('registrar_id')
+            .eq('user_id', userId)
+            .single();
 
           if (registrarError || !registrarData?.registrar_id) {
             throw new UnauthorizedException('Registrar profile not found');

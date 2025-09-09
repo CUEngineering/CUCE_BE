@@ -13,6 +13,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { AuthorizedRoles } from 'src/common/role.decorator';
 import { AuthGuard } from 'src/supabase/auth.guard';
 import { CreateSessionDto, CreateSessionWithStudentsDto, UpdateSessionDto } from '../dto/index.dto';
 import { SessionsService } from '../services/sessions.service';
@@ -35,6 +36,11 @@ export class SessionController {
     return this.sessionService.findAllFilterSessions(req.accessToken);
   }
 
+  @Get('/active')
+  async getActiveSession() {
+    return this.sessionService.fecthActiveSession();
+  }
+
   @Get(':id')
   async getSessionById(@Req() req: Request & { accessToken: string }, @Param('id', ParseIntPipe) id: number) {
     return this.sessionService.getSessionDetail(req.accessToken, id);
@@ -52,12 +58,14 @@ export class SessionController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @AuthorizedRoles(['ADMIN'])
   async createSession(@Body() createDto: CreateSessionDto, @Req() req: Request & { accessToken: string }) {
     return this.sessionService.createSession(req.accessToken, createDto);
   }
 
   @Patch(':id')
   @HttpCode(HttpStatus.OK)
+  @AuthorizedRoles(['ADMIN'])
   async updateSession(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateDto: UpdateSessionDto,
@@ -66,8 +74,23 @@ export class SessionController {
     return this.sessionService.updateSession(req.accessToken, id, updateDto);
   }
 
+  @Post(':sessionId/start')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @AuthorizedRoles(['ADMIN'])
+  async startSession(@Param('sessionId', ParseIntPipe) sessionId: number) {
+    return this.sessionService.startSession(sessionId);
+  }
+
+  @Post(':sessionId/close')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @AuthorizedRoles(['ADMIN'])
+  async closeSession(@Param('sessionId', ParseIntPipe) sessionId: number) {
+    return this.sessionService.closeSession(sessionId);
+  }
+
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @AuthorizedRoles(['ADMIN'])
   async deleteSession(
     @Param('id', ParseIntPipe) id: number,
     @Req() req: Request & { accessToken: string },
@@ -76,6 +99,7 @@ export class SessionController {
   }
 
   @Delete(':sessionId/students/:studentId')
+  @AuthorizedRoles(['ADMIN'])
   async removeStudentFromSession(
     @Param('sessionId') sessionId: number,
     @Param('studentId') studentId: number,
@@ -85,6 +109,7 @@ export class SessionController {
   }
 
   @Patch(':sessionId/courses/:courseId/status')
+  @AuthorizedRoles(['ADMIN'])
   async updateCourseStatus(
     @Req() req: Request & { accessToken: string },
     @Param('sessionId', ParseIntPipe) sessionId: number,
@@ -95,6 +120,7 @@ export class SessionController {
   }
 
   @Post(':sessionId/students')
+  @AuthorizedRoles(['ADMIN'])
   async addStudentsToSession(
     @Param('sessionId') sessionId: number,
     @Body('studentIds') studentIds: number[],
@@ -105,6 +131,7 @@ export class SessionController {
 
   @Post('with-students')
   @HttpCode(HttpStatus.CREATED)
+  @AuthorizedRoles(['ADMIN'])
   async createSessionWithStudents(
     @Body() body: CreateSessionWithStudentsDto,
     @Req() req: Request & { accessToken: string },
