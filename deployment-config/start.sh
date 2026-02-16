@@ -26,7 +26,7 @@ if [ ! -f "$INSTALLED_FILE_PATH" ]; then
     bun install --frozen-lockfile
 
     echo "Running db migration"
-    if ! bun run --bun run:db:migration; then
+    if ! bun run --bun --env-file=.env run:db:migration; then
         echo "Database migration failed. Exiting."
         exit 1
     fi
@@ -35,5 +35,11 @@ if [ ! -f "$INSTALLED_FILE_PATH" ]; then
 fi
 
 echo "Starting Api Service"
-bun --bun ./src/main.ts
+bun run --bun --env-file=.env ./src/main.ts
 
+# git clone git@github.com:CUEngineering/CUCE_BE.git ~/production/repos/CUCE_BE && cd ~/production/repos/CUCE_BE
+# mkdir -p ~/production/docker-compose/services/cuce
+# wsh edit ~/production/docker-compose/services/cuce/cuce.yaml
+# wsh edit ~/production/docker-compose/services/cuce/cuce-backend.env
+# cp ~/production/docker-compose/services/cuce/cuce-backend.env ~/production/repos/CUCE_BE/.env && docker build --no-cache --tag=cuce-backend:production --file ~/production/repos/CUCE_BE/Dockerfile /root/production/repos/CUCE_BE (Always do this after any repo update of the services)
+# docker compose --project-name cuce -f ~/production/docker-compose/services/cuce/cuce.yaml up -d
