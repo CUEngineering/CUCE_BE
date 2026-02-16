@@ -1,0 +1,24 @@
+name: cuce
+services:
+  backend:
+    image: cuce-backend:production
+    labels:
+      traefik.docker.network: traefik-public
+      traefik.enable: 'true'
+      traefik.http.routers.cuce-backend-http.entrypoints: http
+      traefik.http.routers.cuce-backend-http.middlewares: https-redirect
+      traefik.http.routers.cuce-backend-http.rule: Host(`cuce-api.charisma.edu.eu`) || Host(`www.cuce-api.charisma.edu.eu`)
+      traefik.http.routers.cuce-backend-http.service: cuce-backend
+      traefik.http.routers.cuce-backend-https.entrypoints: https
+      traefik.http.routers.cuce-backend-https.rule: Host(`cuce-api.charisma.edu.eu`) || Host(`www.cuce-api.charisma.edu.eu`)
+      traefik.http.routers.cuce-backend-https.service: cuce-backend
+      traefik.http.routers.cuce-backend-https.tls: 'true'
+      traefik.http.routers.cuce-backend-https.tls.certresolver: le
+      traefik.http.services.cuce-backend.loadbalancer.server.port: '80'
+    networks:
+      traefik-public: null
+    restart: always
+networks:
+  traefik-public:
+    name: traefik-public
+    external: true
