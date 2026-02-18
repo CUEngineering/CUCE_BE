@@ -18,6 +18,11 @@ services:
     networks:
       traefik-public: null
     restart: always
+    healthcheck:
+      test: [CMD, curl, -f, 'http://127.0.0.1:80']
+      interval: 5s
+      timeout: 5s
+      retries: 100
 networks:
   traefik-public:
     name: traefik-public

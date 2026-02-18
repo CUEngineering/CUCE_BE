@@ -15,8 +15,8 @@ build
 .gitattributes
 
 # Environment
-.env
-.env.*
+# .env
+# .env.*
 !.env.example
 
 # IDE and editor files
@@ -46,8 +46,6 @@ temp
 coverage
 .git
 .gitignore
-.env
-.env.*
 *.md
 .vscode
 .idea
